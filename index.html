@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MindFlow — AI Well-being Scheduler</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet" />
+  <style>
+    /* STRUCTURAL LAYOUT */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6rem 2rem 2rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Background Gradients */
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 30% 40%, rgba(102, 126, 234, .12) 0%, transparent 60%),
+        radial-gradient(ellipse at 75% 65%, rgba(118, 75, 162, .1) 0%, transparent 55%);
+      pointer-events: none;
+    }
+
+    /* Base structural grid */
+    .hero-content-wrapper {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      max-width: 1200px;
+      width: 100%;
+      position: relative;
+      z-index: 10;
+      align-items: center;
+    }
+
+    .hero-text-side {
+      text-align: left;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+      background: var(--primary-dim);
+      border: 1px solid rgba(102, 126, 234, .3);
+      border-radius: 20px;
+      padding: .35rem .9rem;
+      font-size: .75rem;
+      font-weight: 600;
+      color: var(--primary);
+      margin-bottom: 1.5rem;
+    }
+
+    .hero h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2.4rem, 4.5vw, 4rem);
+      font-weight: 400;
+      line-height: 1.15;
+      margin-bottom: 1.25rem;
+    }
+
+    .hero h1 span {
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: 1.05rem;
+      color: var(--text2);
+      max-width: 500px;
+      margin-bottom: 2.5rem;
+      line-height: 1.7;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    /* Interactive Right Side */
+    .hero-visual-side {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .interactive-demo-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 2rem;
+      width: 100%;
+      max-width: 440px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      position: relative;
+    }
+
+    .interactive-demo-card::before {
+      content: '';
+      position: absolute;
+      top: -15%;
+      right: -15%;
+      width: 150px;
+      height: 150px;
+      background: var(--primary-dim);
+      border-radius: 50%;
+      filter: blur(40px);
+      z-index: -1;
+    }
+
+    .demo-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+    }
+
+    .demo-header h4 {
+      font-size: 1rem;
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .demo-badge {
+      font-size: 0.75rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text2);
+    }
+
+    #stressSlider {
+      width: 100%;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 8px;
+      border-radius: 4px;
+      background: linear-gradient(to right, #4ade80 0%, #fbbf24 50%, #f87171 100%);
+      outline: none;
+      cursor: pointer;
+      margin: 1rem 0 1.5rem;
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    #stressSlider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #fff;
+      border: 4px solid var(--primary);
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      transition: transform 0.2s;
+    }
+
+    #stressSlider::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+    }
+
+    #stressOut {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.4rem;
+      color: var(--primary);
+      text-align: center;
+      margin-bottom: 1rem;
+      transition: color 0.3s ease;
+    }
+
+    .fake-ai-response {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--r-sm);
+      padding: 1rem;
+      font-size: 0.85rem;
+      color: var(--text2);
+      line-height: 1.6;
+      border-left: 3px solid var(--primary);
+      display: flex;
+      gap: 0.75rem;
+      align-items: flex-start;
+    }
+
+    .fake-ai-response i {
+      color: var(--primary);
+      margin-top: 2px;
+    }
+
+    /* Features Grid */
+    .features-section {
+      padding: 4rem 2rem 6rem;
+      position: relative;
+      z-index: 10;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .section-title {
+      text-align: center;
+      margin-bottom: 3rem;
+      font-family: 'Playfair Display', serif;
+      font-size: 2rem;
+      color: var(--text);
+    }
+
+    .hero-features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      width: 100%;
+    }
+
+    .hero-feature {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 2rem;
+      text-align: left;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .hero-feature:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .hero-feature i {
+      font-size: 1.8rem;
+      margin-bottom: 1.25rem;
+      background: var(--gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-feature h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: .5rem;
+    }
+
+    .hero-feature p {
+      font-size: .88rem;
+      color: var(--text2);
+      line-height: 1.6;
+    }
+
+    /* Global Header structural changes */
+    .site-header {
+      background: rgba(15, 23, 42, 0.7);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      transition: all 0.3s ease;
+    }
+
+    /* Animations */
+    /* Handled by AOS */
+
+    /* Floating aesthetic bits */
+    .float-shape {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .03);
+      border: 1px solid rgba(255, 255, 255, .05);
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+      animation: float 12s ease-in-out infinite alternate;
+    }
+
+    @media(max-width: 900px) {
+      .hero-content-wrapper {
+        grid-template-columns: 1fr;
+        gap: 3rem;
+        text-align: center;
+      }
+
+      .hero-text-side {
+        text-align: center;
+      }
+
+      .hero-actions {
+        justify-content: center;
+      }
+
+      .hero p {
+        margin: 0 auto 2.5rem;
+      }
+
+      .hero-features {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="site-header">
+    <div class="header-content">
+      <div class="brand">
+        <div class="brand-icon"><i class="fas fa-seedling"></i></div>
+        <h1>Mind<span>Flow</span></h1>
+      </div>
+      <nav class="main-nav">
+        <a href="login.html" class="btn btn-outline btn-sm">Login</a>
+        <a href="signup.html" class="btn btn-sm">Get Started Free</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="hero">
+    <!-- Aesthetic Floating background elements -->
+    <div class="float-shape" style="width:100px; height:100px; top: 20%; left: 10%; animation-delay: 0s;"></div>
+    <div class="float-shape" style="width:200px; height:200px; bottom: 10%; right: 5%; animation-delay: 3s;"></div>
+
+    <div class="hero-content-wrapper">
+      <!-- TEXT SPLIT -->
+      <div class="hero-text-side" data-aos="fade-up" data-aos-duration="800">
+        <div class="hero-badge"><i class="fas fa-brain"></i> AI-Powered Well-being</div>
+        <h1>Schedule smarter.<br /><span>Stress less. Achieve more.</span></h1>
+        <p>MindFlow analyses your emotional state using face, voice, or self-report inputs to dynamically adjust your
+          daily tasks. Keep yourself productive without ever burning out.</p>
+        <div class="hero-actions">
+          <a href="signup.html" class="btn"><i class="fas fa-rocket"></i> Get Started Free</a>
+          <a href="login.html" class="btn btn-secondary">Login to Dashboard</a>
+        </div>
+      </div>
+
+      <!-- VISUAL INTERACTIVE SPLIT -->
+      <div class="hero-visual-side" data-aos="fade-up" data-aos-delay="200" data-aos-duration="1000">
+        <div class="interactive-demo-card">
+          <div class="demo-header">
+            <h4>Try it live</h4>
+            <span class="demo-badge">Interactive Demo</span>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text2); margin-bottom:0.5rem;">How stressed do you feel right now?
+          </p>
+
+          <div id="stressOut">Level 5 — Neutral</div>
+
+          <input type="range" min="1" max="10" value="5" id="stressSlider" oninput="updateDemo(this.value)" />
+
+          <div class="fake-ai-response" id="fakeAiResponse">
+            <i class="fas fa-magic"></i>
+            <div><strong style="color:var(--text); display:block; margin-bottom:2px;">AI Assistant</strong>
+              <span id="aiDemoText">You're calm and focused. Great state for deep work! Let's tackle priority
+                tasks.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <section class="features-section">
+    <h2 class="section-title" data-aos="fade-up">A completely tailored experience.</h2>
+    <div class="hero-features">
+      <div class="hero-feature" data-aos="fade-up" data-aos-delay="100">
+        <i class="fas fa-camera"></i>
+        <h3>Live Face Detection</h3>
+        <p>Real-time facial expression analysis detects your emotional state using computer vision through your local
+          webcam.</p>
+      </div>
+      <div class="hero-feature" data-aos="fade-up" data-aos-delay="200">
+        <i class="fas fa-microphone"></i>
+        <h3>Voice Analysis</h3>
+        <p>MFCC-based voice emotion recognition identifies stress patterns natively in your speech rhythm and tone.</p>
+      </div>
+      <div class="hero-feature" data-aos="fade-up" data-aos-delay="300">
+        <i class="fas fa-calendar-check"></i>
+        <h3>Adaptive Scheduling</h3>
+        <p>If you're stressed, high-priority hard tasks get deferred. We prioritise what you can handle right now.</p>
+      </div>
+    </div>
+  </section>
+
+  <div id="toast"></div>
+  <script src="js/script.js"></script>
+  <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+  <script>
+    AOS.init();
+    const labels = ['', 'Very Calm', 'Calm', 'Relaxed', 'Neutral', 'Slightly Stressed', 'Moderately Stressed', 'Stressed', 'Very Stressed', 'Overwhelmed', 'Burnt Out'];
+    function updateDemo(v) {
+      const val = parseInt(v);
+      document.getElementById('stressOut').textContent = `Level ${val} — ${labels[val] || 'Neutral'}`;
+      const aiText = document.getElementById('aiDemoText');
+      const slider = document.getElementById('stressSlider');
+      const out = document.getElementById('stressOut');
+
+      if (val <= 3) {
+        aiText.textContent = "Minimal stress detected. This is a great time to tackle demanding, deep-work tasks.";
+        out.style.color = '#4ade80';
+      } else if (val <= 6) {
+        aiText.textContent = "You're at a moderate level. Pace yourself—start small and build momentum.";
+        out.style.color = 'var(--primary)';
+      } else {
+        aiText.textContent = "High stress levels detected! Deferring non-urgent tasks. Let's do something light, and take a breather first.";
+        out.style.color = '#f87171';
+      }
+    }
+  </script>
+</body>
+
+</html>

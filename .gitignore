@@ -1,0 +1,33 @@
+# Env
+.env
+.env.*
+
+# Python
+mindflow_env/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Logs
+*.log
+
+# Editor
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# keep upload folder but ignore its contents
+upload/*
+!upload/.gitkeep
+
+# txt files
+*.txt
+
+# unwanted data files
+*.wav
+*.webm
+tmp_voice_raw*

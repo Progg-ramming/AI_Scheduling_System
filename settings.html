@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Settings — MindFlow</title>
+<link rel="stylesheet" href="css/style.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+</head>
+<body class="dashboard-page">
+
+<aside class="sidebar">
+  <div class="sidebar-logo"><div class="logo-icon"><i class="fas fa-seedling"></i></div><span>Mind<b>Flow</b></span></div>
+  <nav class="sidebar-nav">
+    <div class="nav-section"><div class="nav-section-label">Main</div><div class="nav-item" onclick="window.location.href='dashboard.html'"><i class="fas fa-home"></i>Dashboard</div></div>
+    <div class="nav-section"><div class="nav-section-label">Tasks</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html'"><i class="fas fa-list-check"></i>View Schedule</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html'"><i class="fas fa-calendar-alt"></i>Calendar</div>
+    </div>
+    <div class="nav-section"><div class="nav-section-label">Account</div>
+      <div class="nav-item active"><i class="fas fa-cog"></i>Settings</div>
+      <div class="nav-item" onclick="window.location.href='account.html'"><i class="fas fa-user-circle"></i>My Account</div>
+    </div>
+  </nav>
+  <div class="sidebar-bottom">
+    <div class="user-avatar" id="sidebarAvatar">?</div>
+    <div class="user-info"><div class="user-name" id="sidebarName">Loading...</div><div class="user-sub">Well-being Member</div></div>
+    <button class="logout-btn" id="logoutBtn"><i class="fas fa-sign-out-alt"></i></button>
+  </div>
+</aside>
+
+<div class="dash-main">
+  <div class="topbar">
+    <div class="topbar-left"><h1><span>Settings</span></h1></div>
+    <div class="topbar-right"><a href="dashboard.html" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back to Dashboard</a></div>
+  </div>
+
+  <div class="page-content" style="max-width:720px;">
+
+    <div class="card" style="margin-bottom:1.25rem;">
+      <h3 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:1.1rem;">Notifications</h3>
+      <div class="settings-group">
+        <div class="setting-row"><div><div class="setting-label">Email Reminders</div><div class="setting-desc">Receive daily task reminders via email</div></div><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+        <div class="setting-row"><div><div class="setting-label">Stress Alerts</div><div class="setting-desc">Get notified when your stress level is high</div></div><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+        <div class="setting-row"><div><div class="setting-label">Weekly Reports</div><div class="setting-desc">Receive a wellness summary every Monday</div></div><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.25rem;">
+      <h3 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:1.1rem;">AI Behaviour</h3>
+      <div class="settings-group">
+        <div class="setting-row"><div><div class="setting-label">AI Task Reordering</div><div class="setting-desc">Allow AI to reprioritise tasks based on your stress</div></div><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+        <div class="setting-row"><div><div class="setting-label">Auto Defer High-stress</div><div class="setting-desc">Automatically defer heavy tasks when stress is very high</div></div><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+        <div class="setting-row"><div><div class="setting-label">Face Detection</div><div class="setting-desc">Enable webcam emotion analysis on dashboard</div></div><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+        <div class="setting-row"><div><div class="setting-label">Voice Detection</div><div class="setting-desc">Enable microphone emotion analysis on dashboard</div></div><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.25rem;">
+      <h3 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:1.1rem;">Preferences</h3>
+      <div class="settings-group">
+        <div class="setting-row"><div><div class="setting-label">Dark Mode</div><div class="setting-desc">Currently active — dark navy theme</div></div><label class="toggle"><input type="checkbox" checked disabled><span class="toggle-slider"></span></label></div>
+        <div class="setting-row">
+          <div><div class="setting-label">Default Detection Method</div><div class="setting-desc">Which method opens first on the dashboard</div></div>
+          <select style="background:var(--card2);border:1px solid var(--border2);border-radius:var(--r-sm);padding:.4rem .75rem;color:var(--text);font-family:'Plus Jakarta Sans',sans-serif;font-size:.82rem;outline:none;">
+            <option>Slider</option><option>Face Scan</option><option>Voice</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:1.1rem;">Account Actions</h3>
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+        <a href="account.html" class="btn btn-outline btn-sm"><i class="fas fa-user-edit"></i> Manage Account</a>
+        <button class="btn btn-secondary btn-sm" id="logoutBtn2"><i class="fas fa-sign-out-alt"></i> Logout</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="js/script.js"></script>
+<script>
+const user = JSON.parse(localStorage.getItem('user')||'null');
+if(!user) window.location.href='login.html';
+else {
+  const name = user.name||user.full_name||'User';
+  document.getElementById('sidebarName').textContent = name;
+  document.getElementById('sidebarAvatar').textContent = name.charAt(0).toUpperCase();
+}
+document.getElementById('logoutBtn').addEventListener('click',logout);
+document.getElementById('logoutBtn2').addEventListener('click',logout);
+function logout(){ localStorage.removeItem('user'); localStorage.removeItem('email'); window.location.href='login.html'; }
+</script>
+</body>
+</html>

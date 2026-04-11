@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Sign Up — MindFlow</title>
+<link rel="stylesheet" href="css/style.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+<script>(function(){ emailjs.init("5_WIgtmGO525X4fyG"); })();</script>
+<style>
+.signup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+.signup-grid .full { grid-column: 1 / -1; }
+@media(max-width:600px) { .signup-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body class="auth-page">
+
+<header class="site-header">
+  <div class="header-content">
+    <div class="brand">
+      <div class="brand-icon"><i class="fas fa-seedling"></i></div>
+      <h1>Mind<span>Flow</span></h1>
+    </div>
+    <nav class="main-nav">
+      <a href="index.html" style="font-size:.85rem;color:var(--text2);">← Home</a>
+    </nav>
+  </div>
+</header>
+
+<div class="auth-wrapper">
+  <div class="auth-container">
+    <div class="auth-form-side">
+      <h2>Create your account</h2>
+      <p class="subtitle">"Embrace the journey to better well-being."</p>
+
+      <!-- STEP 1 -->
+      <div id="signupStep1">
+        <form id="signupForm" class="signup-grid">
+          <div class="input-group">
+            <label>Full Name</label>
+            <input type="text" id="full_name" placeholder="Jane Doe" required/>
+          </div>
+          <div class="input-group">
+            <label>Date of Birth</label>
+            <input type="date" id="dob" required/>
+          </div>
+          <div class="input-group">
+            <label>Email Address</label>
+            <input type="email" id="email" placeholder="you@example.com" required/>
+            <small id="emailError" style="display:none;"></small>
+          </div>
+          <div class="input-group">
+            <label>Gender</label>
+            <select id="gender" required>
+              <option value="">Select</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+              <option value="Prefer not to say">Prefer not to say</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>Password</label>
+            <input type="password" id="password" placeholder="Min. 6 characters" required/>
+          </div>
+          <div class="input-group">
+            <label>Confirm Password</label>
+            <input type="password" id="confirmPassword" placeholder="Repeat password" required/>
+          </div>
+          <div class="input-group full">
+            <label>Occupation</label>
+            <input type="text" id="occupation" placeholder="e.g. Student, Engineer, Designer" required/>
+          </div>
+          <div class="full">
+            <button type="submit" class="btn" style="width:100%;justify-content:center;border-radius:var(--r-sm);">
+              <i class="fas fa-paper-plane"></i> Send Verification Code
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- STEP 2: OTP -->
+      <div id="signupStep2" style="display:none;">
+        <p style="font-size:.85rem;color:var(--text2);margin-bottom:.75rem;">We've sent a 6-digit code to your email. Enter it below to complete registration.</p>
+        <p class="otp-timer" id="otpTimer">Time remaining: 05:00</p>
+        <div class="input-group">
+          <label>Verification Code</label>
+          <input type="text" id="verificationCode" maxlength="6" placeholder="— — — — — —" class="otp-input"/>
+        </div>
+        <div style="display:flex;gap:.65rem;">
+          <button id="verifyCode" class="btn" style="flex:1;justify-content:center;border-radius:var(--r-sm);">
+            <i class="fas fa-check"></i> Verify & Sign Up
+          </button>
+          <button id="resendCode" class="btn btn-secondary" style="flex:1;justify-content:center;border-radius:var(--r-sm);" disabled>
+            Resend Code
+          </button>
+        </div>
+      </div>
+
+      <div class="auth-footer">Already have an account? <a href="login.html">Login here</a></div>
+    </div>
+
+    <div class="auth-visual-side">
+      <div style="position:relative;z-index:1;">
+        <div class="auth-circle"></div>
+        <div class="auth-circle"></div>
+        <div class="auth-circle"></div>
+      </div>
+      <div class="auth-visual-text">
+        <div class="big-icon"><i class="fas fa-heart-pulse"></i></div>
+        <h3>Your wellness journey starts here</h3>
+        <p>Join MindFlow and let AI help you build healthier, more productive daily habits.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="js/script.js"></script>
+</body>
+</html>
