@@ -201,7 +201,11 @@ document.getElementById('finalDeleteBtn').addEventListener('click',async()=>{
   try {
     const res=await fetch(`${API}/delete-account`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:user.email})});
     const data=await res.json();
-    if(data.success){localStorage.removeItem('user');localStorage.removeItem('email');alert('Account deleted. Goodbye!');window.location.href='signup.html';}
+    if(data.success){
+      localStorage.removeItem('user'); localStorage.removeItem('email');
+      showToast('Account deleted. Redirecting...');
+      setTimeout(() => window.location.href='signup.html', 1500);
+    }
     else{btn.disabled=false;btn.innerHTML='<i class="fas fa-trash-alt"></i> Yes, permanently delete';showToast(data.error||'Deletion failed');}
   } catch{btn.disabled=false;btn.innerHTML='<i class="fas fa-trash-alt"></i> Yes, permanently delete';showToast('Server error');}
 });

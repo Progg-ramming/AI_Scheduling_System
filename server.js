@@ -61,6 +61,22 @@ const PYTHON_URL = 'http://127.0.0.1:5000';
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS otp TEXT`);
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT false`);
         await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+        await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'other'`);
+        
+        // Ensure categories table exists
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS categories (
+                id          SERIAL PRIMARY KEY,
+                user_email  TEXT NOT NULL,
+                cat_id      VARCHAR(100) NOT NULL,
+                label       VARCHAR(100) NOT NULL,
+                icon        TEXT,
+                color       TEXT,
+                border      TEXT,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_email, cat_id)
+            )
+        `);
         
         console.log('[DB] Tables and columns ready');
 
@@ -275,30 +291,33 @@ app.get('/get-tasks', async (req, res) => {
 
 // ─── ADD TASK ───────────────────────────────────────────────────────────────
 app.post('/add-task', async (req, res) => {
-    const { title, deadline, priority, user_email } = req.body;
+    const { title, deadline, priority, user_email, category } = req.body;
     if (!title || !user_email) return res.status(400).json({ error: 'Title and user required' });
     try {
         const result = await pool.query(
-            `INSERT INTO tasks (user_email, title, deadline, priority, status)
-             VALUES ($1, $2, $3, $4, 'pending') RETURNING id`,
-            [user_email, title, deadline, priority || 'medium']
+            `INSERT INTO tasks (user_email, title, deadline, priority, status, category)
+             VALUES ($1, $2, $3, $4, 'pending', $5) RETURNING id`,
+            [user_email, title, deadline, priority || 'medium', category || 'other']
         );
         res.json({ success: true, id: result.rows[0].id, message: 'Task added' });
     } catch (err) {
-        console.error('Add task error:', err);
+        console.error('[Persistence] Add task error:', err.message || err);
+        if (err.message.includes('column "category" does not exist')) {
+            console.error('[Persistence] CRITICAL: Database schema is out of sync. Category column missing.');
+        }
         res.status(500).json({ error: 'Failed to add task' });
     }
 });
 
 // ─── UPDATE TASK ────────────────────────────────────────────────────────────
 app.post('/update-task', async (req, res) => {
-    const { taskId, title, deadline, priority, status, user_email } = req.body;
+    const { taskId, title, deadline, priority, status, user_email, category } = req.body;
     if (!taskId || !title || !user_email) return res.status(400).json({ error: 'Missing fields' });
     try {
         const result = await pool.query(
-            `UPDATE tasks SET title=$1, deadline=$2, priority=$3, status=$4
-             WHERE id=$5 AND user_email=$6 RETURNING id`,
-            [title, deadline, priority, status || 'pending', taskId, user_email]
+            `UPDATE tasks SET title=$1, deadline=$2, priority=$3, status=$4, category=$5
+             WHERE id=$6 AND user_email=$7 RETURNING id`,
+            [title, deadline, priority, status || 'pending', category || 'other', taskId, user_email]
         );
         if (result.rowCount === 0) return res.status(404).json({ error: 'Task not found' });
         res.json({ success: true });
@@ -325,6 +344,67 @@ app.post('/delete-task', async (req, res) => {
     }
 });
 
+
+// ─── CATEGORY PERSISTENCE ──────────────────────────────────────────────────
+app.get('/get-categories', async (req, res) => {
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ error: 'Email required' });
+    try {
+        const result = await pool.query('SELECT * FROM categories WHERE user_email=$1', [email]);
+        res.json({ categories: result.rows });
+    } catch (err) {
+        console.error('Get categories error:', err);
+        res.status(500).json({ error: 'Failed to fetch categories' });
+    }
+});
+
+app.post('/save-category', async (req, res) => {
+    const { userEmail, catId, label, icon, color, border } = req.body;
+    if (!userEmail || !catId || !label) return res.status(400).json({ error: 'Missing fields' });
+    try {
+        await pool.query(
+            `INSERT INTO categories (user_email, cat_id, label, icon, color, border)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (user_email, cat_id) 
+             DO UPDATE SET label=$3, icon=$4, color=$5, border=$6`,
+            [userEmail, catId, label, icon, color, border]
+        );
+        res.json({ success: true, message: 'Category saved' });
+    } catch (err) {
+        console.error('Save category error:', err);
+        res.status(500).json({ error: 'Failed to save category' });
+    }
+});
+
+app.post('/delete-category', async (req, res) => {
+    const { userEmail, catId } = req.body;
+    if (!userEmail || !catId) return res.status(400).json({ error: 'Missing fields' });
+    try {
+        await pool.query('DELETE FROM categories WHERE user_email=$1 AND cat_id=$2', [userEmail, catId]);
+        res.json({ success: true, message: 'Category removed' });
+    } catch (err) {
+        console.error('Delete category error:', err);
+        res.status(500).json({ error: 'Failed to delete category' });
+    }
+});
+
+// ─── BULK UPDATE CATEGORY ──────────────────────────────────────────────────
+app.post('/bulk-update-category', async (req, res) => {
+    const { oldCategory, newCategory, userEmail } = req.body;
+    if (!oldCategory || !newCategory || !userEmail) return res.status(400).json({ error: 'Missing fields' });
+    try {
+        const result = await pool.query(
+            'UPDATE tasks SET category=$1 WHERE category=$2 AND user_email=$3',
+            [newCategory, oldCategory, userEmail]
+        );
+        // Also remove the old category definition if it exists in DB
+        await pool.query('DELETE FROM categories WHERE user_email=$1 AND cat_id=$2', [userEmail, oldCategory]);
+        res.json({ success: true, count: result.rowCount });
+    } catch (err) {
+        console.error('Bulk update error:', err);
+        res.status(500).json({ error: 'Failed to update tasks' });
+    }
+});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AI ROUTES — these are NEW, connect to your Python ai_bridge.py

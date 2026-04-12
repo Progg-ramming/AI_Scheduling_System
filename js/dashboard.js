@@ -26,8 +26,11 @@ function showPanel(name) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   const match = [...document.querySelectorAll('.nav-item')].find(n => n.getAttribute('onclick')?.includes(`'${name}'`));
   if (match) match.classList.add('active');
+  const fab = document.querySelector('.fab');
+  if (fab) fab.style.display = name === 'schedule' ? 'none' : 'flex';
+
   if (name === 'calendar')  renderCalendar();
-  if (name === 'schedule')  renderScheduleTable();
+  if (name === 'schedule')  { if (currentCategory) { renderScheduleTable(lastAiOrder); } else { renderCategoryGrid(); } }
   if (name === 'analytics') { loadBehaviorInsights(); updateSmartScheduling(); }
   if (name === 'history')   loadRecentActivity();
 }
@@ -60,6 +63,104 @@ let voiceAnimInterval  = null;
 let deferredIds        = [];
 let lastAiOrder        = null;
 let taskFilter         = 'all';
+let currentCategory    = null;
+
+const DEFAULT_CATEGORIES = [
+  { id:'habit',        label:'Quitting Bad Habit', icon:'🚭', color:'var(--red-dim)',    border:'var(--red)' },
+  { id:'art',          label:'Art',                icon:'🎨', color:'var(--primary-dim)',border:'var(--primary)' },
+  { id:'self-love',    label:'Self Love',          icon:'💖', color:'rgba(236,72,153,.12)',border:'#ec4899' },
+  { id:'meditation',   label:'Meditation',         icon:'🧘', color:'var(--accent-dim)', border:'var(--accent)' },
+  { id:'study',        label:'Study',              icon:'📚', color:'var(--primary-dim)',border:'var(--primary)' },
+  { id:'sports',       label:'Sports',             icon:'⚽', color:'var(--green-dim)',  border:'var(--green)' },
+  { id:'entertainment',label:'Entertainment',      icon:'🎮', color:'var(--yellow-dim)', border:'var(--yellow)' },
+  { id:'social',       label:'Social',             icon:'👥', color:'var(--accent-dim)', border:'var(--accent)' },
+  { id:'finance',      label:'Finance',            icon:'💰', color:'var(--green-dim)',  border:'var(--green)' },
+  { id:'spirituality', label:'Spirituality',       icon:'✨', color:'rgba(167,139,250,.15)',border:'#a78bfa' },
+  { id:'health',       label:'Health',             icon:'❤️', color:'var(--red-dim)',    border:'var(--red)' },
+  { id:'work',         label:'Work',               icon:'💼', color:'var(--primary-dim)',border:'var(--primary)' },
+  { id:'nutrition',    label:'Nutrition',          icon:'🥗', color:'var(--green-dim)',  border:'var(--green)' },
+  { id:'home',         label:'Home',               icon:'🏠', color:'var(--yellow-dim)', border:'var(--yellow)' },
+  { id:'outdoor',      label:'Outdoor',            icon:'🌿', color:'var(--green-dim)',  border:'var(--green)' },
+  { id:'other',        label:'Other',              icon:'➕', color:'var(--card2)',       border:'var(--border2)' },
+];
+
+const CATEGORY_COLOR_POOL = [
+  { border: '#38bdf8', color: 'rgba(56,189,248,0.12)' },   // Sky
+  { border: '#818cf8', color: 'rgba(129,140,248,0.12)' },  // Indigo
+  { border: '#f472b6', color: 'rgba(244,114,182,0.12)' },  // Pink
+  { border: '#fb923c', color: 'rgba(251,146,60,0.12)' },   // Orange
+  { border: '#2dd4bf', color: 'rgba(45,212,191,0.12)' },   // Teal
+  { border: '#a78bfa', color: 'rgba(167,139,250,0.12)' },  // Violet
+  { border: '#fb7185', color: 'rgba(251,113,133,0.12)' },  // Rose
+  { border: '#4ade80', color: 'rgba(74,222,128,0.12)' },   // Emerald
+];
+
+const CATEGORY_ICON_POOL = ['📋', '🔖', '🏷️', '🌟', '🎯', '💡', '🚀', '🌈'];
+
+let customCategories = []; // Will be loaded from DB
+
+function getAllCategories() {
+  const defaults = [...DEFAULT_CATEGORIES];
+  const other = defaults.pop(); // Remove 'other'
+  
+  // Use a Map to ensure unique IDs, prioritizing custom overrides
+  const catMap = new Map();
+  
+  // 1. Add defaults
+  defaults.forEach(c => catMap.set(c.id, c));
+  
+  // 2. Add custom overrides/new categories from DB
+  customCategories.forEach(c => {
+    // If it's a rename of a default, it replaces the default in the map
+    catMap.set(c.cat_id || c.id, {
+      ...catMap.get(c.cat_id || c.id), // Keep original icon/colors if not in custom
+      ...c,
+      id: c.cat_id || c.id // ensure id is correct
+    });
+  });
+  
+  const result = Array.from(catMap.values());
+  result.push(other); // Always keep 'Other' at the end
+  return result;
+}
+
+async function loadCategories() {
+  const email = user?.email || localStorage.getItem('email') || '';
+  try {
+    const res = await fetch(`${API}/get-categories?email=${encodeURIComponent(email)}`);
+    const data = await res.json();
+    customCategories = data.categories || [];
+    
+    // Migration from localStorage if needed
+    const local = JSON.parse(localStorage.getItem('mf_custom_cats') || '[]');
+    if (local.length > 0) {
+      console.log(`[Persistence] Migrating ${local.length} local categories to DB...`);
+      for (const c of local) {
+        await fetch(`${API}/save-category`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userEmail: email, catId: c.id, label: c.label, icon: c.icon, color: c.color, border: c.border })
+        });
+      }
+      localStorage.removeItem('mf_custom_cats');
+      // Reload after migration
+      const reload = await fetch(`${API}/get-categories?email=${encodeURIComponent(email)}`);
+      customCategories = (await reload.json()).categories || [];
+    }
+  } catch (err) { console.error('[Persistence] Error loading categories:', err); }
+  renderCategoryOptions();
+  renderCategoryGrid();
+}
+
+function renderCategoryOptions() {
+  const sel = document.getElementById('taskCategory');
+  if (!sel) return;
+  const cats = getAllCategories();
+  sel.innerHTML = cats.map(c => `<option value="${c.id}">${c.label}</option>`).join('');
+}
+
+function getCatById(id) {
+  return getAllCategories().find(c => c.id === id) || { id, label: id, icon: '📋', color:'var(--card2)', border:'var(--border2)' };
+}
 
 const STRESS_LABELS = [
   '',
@@ -307,12 +408,19 @@ async function loadTasks() {
   try {
     const res = await fetch(`${API}/get-tasks?email=${encodeURIComponent(email)}`);
     const data = await res.json();
-    tasks = (data.tasks || data || []).map(t => ({
-      ...t,
-      done: t.status === 'done',
-      deadline: t.deadline ? t.deadline.split('T')[0] : null
-    }));
-  } catch {}
+    const serverTasks = data.tasks || data || [];
+    console.log(`[Persistence] Loaded ${serverTasks.length} tasks from server`);
+    
+    tasks = serverTasks.map(t => {
+      if (!t.category) console.warn(`[Persistence] Task ${t.id} ("${t.title}") has NO category. Defaulting to 'other'.`);
+      return {
+        ...t,
+        category: t.category || 'other',
+        done: t.status === 'done',
+        deadline: t.deadline ? t.deadline.split('T')[0] : null
+      };
+    });
+  } catch (err) { console.error('[Persistence] Error loading tasks:', err); }
   renderTasks();
   renderScheduleTable();
 }
@@ -385,7 +493,24 @@ async function toggleTask(id) {
 window.toggleTask = toggleTask;
 
 async function deleteTask(id) {
-  if (!confirm('Delete this task?')) return;
+  // Use custom modal instead of system confirm()
+  openDeleteTaskModal(id);
+}
+window.deleteTask = deleteTask;
+
+function openDeleteTaskModal(id) {
+  document.getElementById('deleteTaskId').value = id;
+  document.getElementById('deleteTaskModal').classList.add('open');
+}
+window.openDeleteTaskModal = openDeleteTaskModal;
+
+function closeDeleteTaskModal() {
+  document.getElementById('deleteTaskModal').classList.remove('open');
+}
+window.closeDeleteTaskModal = closeDeleteTaskModal;
+
+async function confirmDeleteTask() {
+  const id = document.getElementById('deleteTaskId').value;
   const email = user?.email || localStorage.getItem('email') || '';
   try {
     await fetch(`${API}/delete-task`, {
@@ -395,10 +520,12 @@ async function deleteTask(id) {
     tasks = tasks.filter(t => t.id != id);
     deferredIds = deferredIds.filter(did => String(did) !== String(id));
     showToast('Task deleted');
+    closeDeleteTaskModal();
     renderTasks(lastAiOrder); renderScheduleTable(lastAiOrder); renderCalendar();
+    renderCategoryGrid();
   } catch { showToast('Error deleting task'); }
 }
-window.deleteTask = deleteTask;
+window.confirmDeleteTask = confirmDeleteTask;
 
 function filterTasks(f, btn) {
   taskFilter = f;
@@ -410,14 +537,189 @@ function filterTasks(f, btn) {
 }
 window.filterTasks = filterTasks;
 
+// ── CATEGORY GRID ────────────────────────────────────────────────────────────
+function renderCategoryGrid() {
+  const grid = document.getElementById('categoryGrid');
+  if (!grid) return;
+  const cats = getAllCategories();
+  grid.innerHTML = cats.map(cat => {
+    const count = tasks.filter(t => (t.category || 'other') === cat.id && !t.done).length;
+    return `
+      <div class="card cat-card" onclick="openCategory('${cat.id}')" style="border-color:${count>0?cat.border:'var(--border)'};background:${count>0?cat.color:'var(--card2)'}">
+        <div class="cat-card-options" onclick="toggleCategoryMenu(event, '${cat.id}')">
+          <i class="fas fa-ellipsis-v"></i>
+        </div>
+        <div class="cat-dropdown" id="dropdown-${cat.id}">
+          <div class="cat-dropdown-item" onclick="openRenameModal(event, '${cat.id}')"><i class="fas fa-pen"></i> Rename</div>
+          ${cat.id !== 'other' ? `<div class="cat-dropdown-item danger" onclick="openDeleteModal(event, '${cat.id}')"><i class="fas fa-trash"></i> Delete</div>` : ''}
+        </div>
+        ${count > 0 ? `<span class="cat-card-count">${count}</span>` : ''}
+        <span class="cat-card-icon">${cat.icon}</span>
+        <div class="cat-card-label">${cat.label}</div>
+      </div>
+    `;
+  }).join('');
+}
+window.renderCategoryGrid = renderCategoryGrid;
+
+function toggleCategoryMenu(e, catId) {
+  e.stopPropagation();
+  document.querySelectorAll('.cat-dropdown').forEach(d => { if (d.id !== `dropdown-${catId}`) d.classList.remove('show'); });
+  const el = document.getElementById(`dropdown-${catId}`);
+  if (el) el.classList.toggle('show');
+}
+
+// Close dropdowns on window click
+window.addEventListener('click', (e) => {
+  if (!e.target.closest('.cat-card-options')) {
+    document.querySelectorAll('.cat-dropdown').forEach(d => d.classList.remove('show'));
+  }
+});
+
+async function openRenameModal(e, catId) {
+  e.stopPropagation();
+  const cat = getCatById(catId);
+  document.getElementById('renameCatId').value = catId;
+  document.getElementById('renameCatInput').value = cat.label;
+  document.getElementById('renameCatModal').classList.add('open');
+  setTimeout(() => document.getElementById('renameCatInput').focus(), 100);
+}
+window.openRenameModal = openRenameModal;
+
+function closeRenameModal() {
+  document.getElementById('renameCatModal').classList.remove('open');
+}
+window.closeRenameModal = closeRenameModal;
+
+async function confirmRenameCategory() {
+  const catId = document.getElementById('renameCatId').value;
+  const newName = document.getElementById('renameCatInput').value.trim();
+  const cat = getCatById(catId);
+  
+  if (!newName || newName === cat.label) { closeRenameModal(); return; }
+
+  const email = user?.email || localStorage.getItem('email') || '';
+  
+  // Update definition locally
+  const custom = customCategories.find(c => c.id === catId);
+  if (custom) {
+    custom.label = newName;
+  } else {
+    // If it was a default, clone it to custom so we can track the name override
+    const newCat = { ...cat, label: newName };
+    customCategories.push(newCat);
+  }
+  
+  localStorage.setItem('mf_custom_cats', JSON.stringify(customCategories)); // Legacy fallback
+  
+  try {
+    await fetch(`${API}/save-category`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userEmail: email, catId, label: newName, icon: cat.icon, color: cat.color, border: cat.border })
+    });
+    // Refresh local state
+    const res = await fetch(`${API}/get-categories?email=${encodeURIComponent(email)}`);
+    customCategories = (await res.json()).categories || [];
+  } catch { showToast('Error saving to server'); }
+
+  showToast('Category renamed ✓');
+  closeRenameModal();
+  renderCategoryGrid();
+}
+window.confirmRenameCategory = confirmRenameCategory;
+
+function openDeleteModal(e, catId) {
+  e.stopPropagation();
+  if (catId === 'other') return showToast('Cannot delete "Other"');
+  document.getElementById('deleteCatId').value = catId;
+  document.getElementById('deleteCatModal').classList.add('open');
+}
+window.openDeleteModal = openDeleteModal;
+
+function closeDeleteModal() {
+  document.getElementById('deleteCatModal').classList.remove('open');
+}
+window.closeDeleteModal = closeDeleteModal;
+
+async function confirmDeleteCategory() {
+  const catId = document.getElementById('deleteCatId').value;
+  const email = user?.email || localStorage.getItem('email') || '';
+  
+  try {
+    const res = await fetch(`${API}/bulk-update-category`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldCategory: catId, newCategory: 'other', userEmail: email })
+    });
+    const data = await res.json();
+    
+    // Update local tasks
+    tasks.forEach(t => { if (t.category === catId) t.category = 'other'; });
+    
+    // Refresh local categories
+    const r = await fetch(`${API}/get-categories?email=${encodeURIComponent(email)}`);
+    customCategories = (await r.json()).categories || [];
+
+    showToast('Category deleted ✓');
+    closeDeleteModal();
+    renderCategoryGrid();
+    if (currentCategory === catId) showCategoryGrid();
+  } catch {
+    showToast('Error syncing with server');
+  }
+}
+window.confirmDeleteCategory = confirmDeleteCategory;
+
+function openCategory(catId) {
+  currentCategory = catId;
+  document.getElementById('catGridView').style.display = 'none';
+  document.getElementById('catDetailView').style.display = 'block';
+  const cat = getCatById(catId);
+  document.getElementById('catDetailTitle').innerHTML = `<span style="margin-right:.4rem;">${cat.icon}</span>${cat.label}`;
+  
+  const detailBtn = document.getElementById('catDetailBtn');
+  if (detailBtn) {
+    detailBtn.innerHTML = cat.id === 'other' ? '<i class="fas fa-plus"></i> Add Category' : '<i class="fas fa-plus"></i> Add Task';
+  }
+  
+  updateScheduleNavLabel(cat.label);
+  renderScheduleTable(lastAiOrder);
+}
+window.openCategory = openCategory;
+
+function showCategoryGrid() {
+  currentCategory = null;
+  document.getElementById('catGridView').style.display = 'block';
+  document.getElementById('catDetailView').style.display = 'none';
+  updateScheduleNavLabel(null);
+  renderCategoryGrid();
+}
+window.showCategoryGrid = showCategoryGrid;
+
+function updateScheduleNavLabel(catLabel) {
+  const navItem = [...document.querySelectorAll('.nav-item')].find(n => n.getAttribute('onclick')?.includes("'schedule'"));
+  if (!navItem) return;
+  if (catLabel) {
+    navItem.innerHTML = `<i class="fas fa-list-check"></i>Schedule <span class="ai-order-badge" style="font-size:.6rem;padding:.1rem .35rem;">${catLabel}</span>`;
+  } else {
+    navItem.innerHTML = `<i class="fas fa-list-check"></i>View Schedule`;
+  }
+}
+window.updateScheduleNavLabel = updateScheduleNavLabel;
+
 // ── SCHEDULE TABLE ────────────────────────────────────
 function renderScheduleTable(orderedIds) {
   const tbody = document.getElementById('scheduleBody');
   if (!tbody) return;
 
   let list = [...tasks];
+  // Filter by current category if one is selected
+  if (currentCategory) {
+    list = list.filter(t => (t.category || 'other') === currentCategory);
+  }
   if (orderedIds) {
-    const reordered = orderedIds.map(id => list.find(t => t.id == id)).filter(Boolean);
+    const orderedFiltered = orderedIds.filter(id => list.find(t => t.id == id));
+    const reordered = orderedFiltered.map(id => list.find(t => t.id == id)).filter(Boolean);
     const rest = list.filter(t => !orderedIds.map(String).includes(String(t.id)));
     list = [...reordered, ...rest];
   }
@@ -441,6 +743,7 @@ function renderScheduleTable(orderedIds) {
       <td>${t.title || 'Untitled'}
         ${isAiOrdered && !t.done ? '<span class="ai-order-badge"><i class="fas fa-sparkles"></i>AI</span>' : ''}
         ${isDeferred ? '<br><span class="badge badge-red" style="font-size:.65rem;padding:1px 4px;">AI Deferred</span>' : ''}
+        ${!currentCategory ? `<br><span class="badge badge-purple" style="font-size:.62rem;padding:1px 6px;">${getCatById(t.category||'other').icon} ${getCatById(t.category||'other').label}</span>` : ''}
       </td>
       <td style="color:var(--text2)">${t.deadline || '—'}</td>
       <td><span style="font-weight:600;color:${pColor[t.priority||'medium']}">${(t.priority||'medium').charAt(0).toUpperCase()+(t.priority||'medium').slice(1)}</span></td>
@@ -458,12 +761,24 @@ function renderScheduleTable(orderedIds) {
 
 // ── MODAL ─────────────────────────────────────────────
 function openAddModal(dateStr) {
+  renderCategoryOptions(); // Ensure dropdown is dynamic
   document.getElementById('modalTitle').textContent = 'Add New Task';
   document.getElementById('editTaskId').value = '';
   document.getElementById('taskTitle').value = '';
-  document.getElementById('taskDeadline').value = dateStr || '';
+  // Enforce today as minimum date
+  const todayStr = new Date().toISOString().split('T')[0];
+  const dl = document.getElementById('taskDeadline');
+  dl.min = todayStr;
+  dl.value = dateStr && dateStr >= todayStr ? dateStr : '';
   document.getElementById('taskPriority').value = 'medium';
   document.getElementById('taskNotes').value = '';
+  const catSel = document.getElementById('taskCategory');
+  if (catSel) {
+    // Pre-select currentCategory if available
+    const optVal = currentCategory && catSel.querySelector(`option[value="${currentCategory}"]`) ? currentCategory : 'other';
+    catSel.value = optVal;
+    handleCategorySelect(catSel);
+  }
   document.getElementById('taskModal').classList.add('open');
   setTimeout(() => document.getElementById('taskTitle').focus(), 100);
 }
@@ -474,9 +789,24 @@ function openEditModal(id) {
   document.getElementById('modalTitle').textContent = 'Edit Task';
   document.getElementById('editTaskId').value = id;
   document.getElementById('taskTitle').value = t.title || '';
-  document.getElementById('taskDeadline').value = t.deadline || '';
+  const todayStr = new Date().toISOString().split('T')[0];
+  const dl = document.getElementById('taskDeadline');
+  dl.min = todayStr;
+  dl.value = t.deadline || '';
   document.getElementById('taskPriority').value = t.priority || 'medium';
   document.getElementById('taskNotes').value = t.notes || '';
+  const catSel = document.getElementById('taskCategory');
+  if (catSel) {
+    const tCat = t.category || 'other';
+    // If it's a custom category not in the select, add a temp option
+    if (!catSel.querySelector(`option[value="${tCat}"]`)) {
+      const opt = document.createElement('option');
+      opt.value = tCat; opt.textContent = tCat;
+      catSel.appendChild(opt);
+    }
+    catSel.value = tCat;
+    handleCategorySelect(catSel);
+  }
   document.getElementById('taskModal').classList.add('open');
 }
 window.openEditModal = openEditModal;
@@ -489,35 +819,70 @@ async function submitTask() {
   const title = document.getElementById('taskTitle').value.trim();
   if (!title) { showToast('Task title is required'); return; }
   const deadline = document.getElementById('taskDeadline').value;
+  // Date validation: reject past dates
+  if (deadline) {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (deadline < todayStr) { showToast('Please select today or a future date'); return; }
+  }
   const priority = document.getElementById('taskPriority').value;
   const editId   = document.getElementById('editTaskId').value;
   const email    = user?.email || localStorage.getItem('email') || '';
+  let category = document.getElementById('taskCategory')?.value || currentCategory || 'other';
+  
+  // Auto-add custom category if "other" is selected and name is typed
+  if (category === 'other') {
+    const customName = document.getElementById('newCatInput')?.value.trim();
+    if (customName) {
+      addCustomCategory(); // This internal function adds to list and sets dropdown value
+      category = document.getElementById('taskCategory').value;
+    }
+  }
 
   if (editId) {
     try {
       await fetch(`${API}/update-task`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId: parseInt(editId), title, deadline, priority, status: 'pending', user_email: email })
+        body: JSON.stringify({ taskId: parseInt(editId), title, deadline, priority, status: 'pending', user_email: email, category })
       });
       const t = tasks.find(t => t.id == editId);
-      if (t) { t.title = title; t.deadline = deadline; t.priority = priority; }
+      if (t) {
+        t.title = title;
+        t.deadline = deadline;
+        t.priority = priority;
+        t.category = category;
+        t.notes = document.getElementById('taskNotes').value;
+      }
       showToast('Task updated ✓');
     } catch { showToast('Error updating task'); }
   } else {
     try {
+      console.log(`[Persistence] Adding task to category: ${category}`);
       const res = await fetch(`${API}/add-task`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, deadline, priority, user_email: email })
+        body: JSON.stringify({ title, deadline, priority, user_email: email, category })
       });
       const data = await res.json();
       if (data.success) {
-        tasks.push({ id: data.id || Date.now(), title, deadline, priority, done: false });
+        const notes = document.getElementById('taskNotes').value;
+        const newTask = {
+          id: data.id || Date.now(),
+          title,
+          deadline,
+          priority,
+          done: false,
+          category,
+          notes,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        };
+        tasks.push(newTask);
         showToast('Task added ✓');
       } else { showToast(data.error || 'Error adding task'); }
     } catch { showToast('Server error'); }
   }
   closeModal();
   renderTasks(lastAiOrder); renderScheduleTable(lastAiOrder); renderCalendar();
+  if (document.getElementById('catGridView')?.style.display !== 'none') renderCategoryGrid();
 }
 window.submitTask = submitTask;
 
@@ -853,8 +1218,58 @@ function showToast(msg) {
 }
 window.showToast = showToast;
 
+// ── CATEGORY MODAL HELPERS ───────────────────────────────────────────────────
+function handleCategorySelect(sel) {
+  const grp = document.getElementById('customCatGroup');
+  if (!grp) return;
+  grp.style.display = sel.value === 'other' ? 'block' : 'none';
+}
+window.handleCategorySelect = handleCategorySelect;
+
+async function addCustomCategory() {
+  const input = document.getElementById('newCatInput');
+  const raw = input?.value.trim();
+  if (!raw) { showToast('Enter a category name'); return; }
+  const id = raw.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  if (getAllCategories().find(c => c.id === id)) { showToast('Category already exists'); return; }
+  
+  // Pick colors and icon from pools
+  const colorIdx = (customCategories.length) % CATEGORY_COLOR_POOL.length;
+  const iconIdx  = (customCategories.length) % CATEGORY_ICON_POOL.length;
+  const colorSet = CATEGORY_COLOR_POOL[colorIdx];
+  const iconSet  = CATEGORY_ICON_POOL[iconIdx];
+  
+  const email = user?.email || localStorage.getItem('email') || '';
+  
+  try {
+    await fetch(`${API}/save-category`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userEmail: email, catId: id, label: raw, icon: iconSet, color: colorSet.color, border: colorSet.border })
+    });
+    // Refresh local state
+    const res = await fetch(`${API}/get-categories?email=${encodeURIComponent(email)}`);
+    customCategories = (await res.json()).categories || [];
+  } catch { showToast('Error saving to server'); }
+
+  renderCategoryOptions(); // Centralized rendering
+  const sel = document.getElementById('taskCategory');
+  if (sel) {
+    sel.value = id;
+    document.getElementById('customCatGroup').style.display = 'none';
+  }
+  if (input) input.value = '';
+  showToast(`Category "${raw}" added!`);
+  renderCategoryGrid(); // Refresh grid too
+}
+window.addCustomCategory = addCustomCategory;
+
 // ── INIT ──────────────────────────────────────────────
-loadTasks().then(() => { initCalendar(); loadRecentActivity(); });
+loadTasks().then(() => { 
+  loadCategories(); // Integrated category loading
+  initCalendar(); 
+  loadRecentActivity(); 
+  renderCategoryGrid(); 
+});
 updateSlider(40);
 updateSmartScheduling();
 
