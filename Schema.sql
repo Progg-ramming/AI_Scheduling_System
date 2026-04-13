@@ -63,9 +63,18 @@ CREATE TABLE IF NOT EXISTS categories (
     icon TEXT,
     color TEXT,
     border TEXT,
+    original_cat_id TEXT, -- Tracks if this replaced a default category
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- For recency sorting
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_email, cat_id)
 );
+
+-- 1. Tracking for renamed defaults
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS original_cat_id TEXT;
+
+-- 2. Recency sorting (Move to Top feature)
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
 
 -- Migrations / Fixes for existing databases:
 -- ══════════════════════════════════════════════════════════════════════════

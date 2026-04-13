@@ -875,3 +875,17 @@ a:hover { color: var(--primary); }
 }
 .cat-dropdown-item:hover { background: var(--primary-glow); color: var(--text); }
 .cat-dropdown-item.danger:hover { background: var(--red-dim); color: var(--red); }
+
+/* ── ICON BUTTONS ── */
+.btn-icon {
+  width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card2); color: var(--text2); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: all .2s;
+}
+.btn-icon:hover { border-color: var(--border2); color: var(--text); background: var(--card3); transform: translateY(-1px); }
+.btn-icon.success { color: var(--green); }
+.btn-icon.success:hover { background: var(--green-dim); border-color: var(--green); }
+.btn-icon.warning { color: var(--yellow); }
+.btn-icon.warning:hover { background: var(--yellow-dim); border-color: var(--yellow); }
+.btn-icon.danger { color: var(--red); }
+.btn-icon.danger:hover { background: var(--red-dim); border-color: var(--red); }

@@ -73,10 +73,15 @@ const PYTHON_URL = 'http://127.0.0.1:5000';
                 icon        TEXT,
                 color       TEXT,
                 border      TEXT,
+                original_cat_id TEXT,
+                updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(user_email, cat_id)
             )
         `);
+        // Ensure columns exist for older DBs
+        await pool.query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS original_cat_id TEXT`);
+        await pool.query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
         
         console.log('[DB] Tables and columns ready');
 
@@ -299,6 +304,10 @@ app.post('/add-task', async (req, res) => {
              VALUES ($1, $2, $3, $4, 'pending', $5) RETURNING id`,
             [user_email, title, deadline, priority || 'medium', category || 'other']
         );
+        
+        // ✨ Move category to top
+        if (category) touchCategory(user_email, category);
+
         res.json({ success: true, id: result.rows[0].id, message: 'Task added' });
     } catch (err) {
         console.error('[Persistence] Add task error:', err.message || err);
@@ -320,6 +329,10 @@ app.post('/update-task', async (req, res) => {
             [title, deadline, priority, status || 'pending', category || 'other', taskId, user_email]
         );
         if (result.rowCount === 0) return res.status(404).json({ error: 'Task not found' });
+        
+        // ✨ Move category to top
+        if (category) touchCategory(user_email, category);
+
         res.json({ success: true });
     } catch (err) {
         console.error('Update task error:', err);
@@ -346,6 +359,31 @@ app.post('/delete-task', async (req, res) => {
 
 
 // ─── CATEGORY PERSISTENCE ──────────────────────────────────────────────────
+// ─── HELPER: TOUCH CATEGORY ────────────────────────────────────────────────
+async function touchCategory(email, catId) {
+    if (!email || !catId || catId === 'other') return;
+    try {
+        // Try to update existing category timestamp
+        const res = await pool.query(
+            'UPDATE categories SET updated_at = CURRENT_TIMESTAMP WHERE user_email=$1 AND cat_id=$2',
+            [email, catId]
+        );
+        
+        // If it didn't exist in DB (meaning it's a default category), 
+        // we create a custom row for it to store the timestamp
+        if (res.rowCount === 0) {
+            // Find the label - we'll let the frontend handle the full details on next save,
+            // but for now we just want to ensure it has a row for sorting.
+            await pool.query(
+                `INSERT INTO categories (user_email, cat_id, label, updated_at)
+                 VALUES ($1, $2, $2, CURRENT_TIMESTAMP)
+                 ON CONFLICT (user_email, cat_id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP`,
+                [email, catId]
+            );
+        }
+    } catch (err) { console.error('[DB] Touch category error:', err); }
+}
+
 app.get('/get-categories', async (req, res) => {
     const { email } = req.query;
     if (!email) return res.status(400).json({ error: 'Email required' });
@@ -359,15 +397,15 @@ app.get('/get-categories', async (req, res) => {
 });
 
 app.post('/save-category', async (req, res) => {
-    const { userEmail, catId, label, icon, color, border } = req.body;
+    const { userEmail, catId, label, icon, color, border, originalCatId } = req.body;
     if (!userEmail || !catId || !label) return res.status(400).json({ error: 'Missing fields' });
     try {
         await pool.query(
-            `INSERT INTO categories (user_email, cat_id, label, icon, color, border)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            `INSERT INTO categories (user_email, cat_id, label, icon, color, border, original_cat_id, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
              ON CONFLICT (user_email, cat_id) 
-             DO UPDATE SET label=$3, icon=$4, color=$5, border=$6`,
-            [userEmail, catId, label, icon, color, border]
+             DO UPDATE SET label=$3, icon=$4, color=$5, border=$6, original_cat_id=$7, updated_at=CURRENT_TIMESTAMP`,
+            [userEmail, catId, label, icon, color, border, originalCatId || null]
         );
         res.json({ success: true, message: 'Category saved' });
     } catch (err) {
@@ -406,9 +444,83 @@ app.post('/bulk-update-category', async (req, res) => {
     }
 });
 
+// ─── RENAME CATEGORY ────────────────────────────────────────────────────────
+app.post('/rename-category', async (req, res) => {
+    const { userEmail, oldCatId, newLabel, icon, color, border, originalCatId } = req.body;
+    if (!userEmail || !oldCatId || !newLabel) return res.status(400).json({ error: 'Missing fields' });
+
+    // Generate new slug
+    const newCatId = newLabel.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // 1. Check if the new category already exists in the DB
+        const existing = await client.query(
+            'SELECT * FROM categories WHERE user_email=$1 AND cat_id=$2',
+            [userEmail, newCatId]
+        );
+
+        if (existing.rows.length > 0) {
+            // MERGE CASE: New category already exists, just move tasks and delete old one if it existed in DB
+            await client.query(
+                'UPDATE tasks SET category=$1 WHERE category=$2 AND user_email=$3',
+                [newCatId, oldCatId, userEmail]
+            );
+            // Delete old definition if it was custom
+            await client.query(
+                'DELETE FROM categories WHERE user_email=$1 AND cat_id=$2',
+                [userEmail, oldCatId]
+            );
+        } else {
+            // RENAME CASE: New category doesn't exist. 
+            // Check if old category was a custom one (in DB) or a default
+            const oldCustom = await client.query(
+                'SELECT * FROM categories WHERE user_email=$1 AND cat_id=$2',
+                [userEmail, oldCatId]
+            );
+
+            // Determine what the original catalyst was (to prevent template cards from coming back)
+            const resolvedOriginalId = originalCatId || (oldCustom.rows.length > 0 ? oldCustom.rows[0].original_cat_id : oldCatId);
+
+            if (oldCustom.rows.length > 0) {
+                // Update existing custom category slug, label, and origin tracking
+                await client.query(
+                    'UPDATE categories SET cat_id=$1, label=$2, icon=$3, color=$4, border=$5, original_cat_id=$6, updated_at=CURRENT_TIMESTAMP WHERE user_email=$7 AND cat_id=$8',
+                    [newCatId, newLabel, icon || oldCustom.rows[0].icon, color || oldCustom.rows[0].color, border || oldCustom.rows[0].border, resolvedOriginalId, userEmail, oldCatId]
+                );
+            } else {
+                // It was a default category (not in DB) being renamed for the first time
+                await client.query(
+                    `INSERT INTO categories (user_email, cat_id, label, icon, color, border, original_cat_id, updated_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
+                    [userEmail, newCatId, newLabel, icon || '📋', color || 'var(--card2)', border || 'var(--border2)', resolvedOriginalId]
+                );
+            }
+
+            // Always update tasks to the new slug
+            await client.query(
+                'UPDATE tasks SET category=$1 WHERE category=$2 AND user_email=$3',
+                [newCatId, oldCatId, userEmail]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true, newCatId, message: 'Category renamed and tasks migrated' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error('Rename category error:', err);
+        res.status(500).json({ error: 'Failed to rename category' });
+    } finally {
+        client.release();
+    }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // AI ROUTES — these are NEW, connect to your Python ai_bridge.py
 // ═══════════════════════════════════════════════════════════════════════════
+
 
 // ─── ANALYZE STRESS + SCHEDULE TASKS ────────────────────────────────────────
 app.post('/analyze', async (req, res) => {

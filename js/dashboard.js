@@ -111,15 +111,32 @@ function getAllCategories() {
   
   // 2. Add custom overrides/new categories from DB
   customCategories.forEach(c => {
-    // If it's a rename of a default, it replaces the default in the map
-    catMap.set(c.cat_id || c.id, {
-      ...catMap.get(c.cat_id || c.id), // Keep original icon/colors if not in custom
-      ...c,
-      id: c.cat_id || c.id // ensure id is correct
+    const finalId = c.cat_id || c.id;
+    
+    // 🗑️ If this custom category replaces a default one, suppress the original default template
+    if (c.original_cat_id && c.original_cat_id !== finalId) {
+      catMap.delete(c.original_cat_id);
+    }
+    
+    // Filter out null/undefined values so we don't overwrite defaults with "empty" DB data
+    const cleanCustom = Object.fromEntries(Object.entries(c).filter(([_, v]) => v != null));
+
+    catMap.set(finalId, {
+      ...catMap.get(finalId), // Merge with default if ID matches
+      ...cleanCustom,
+      id: finalId 
     });
   });
   
   const result = Array.from(catMap.values());
+  
+  // ⚡ SORT BY RECENCY: Most recently updated/interacted categories go to the top
+  result.sort((a, b) => {
+    const timeA = new Date(a.updated_at || 0).getTime();
+    const timeB = new Date(b.updated_at || 0).getTime();
+    return timeB - timeA;
+  });
+
   result.push(other); // Always keep 'Other' at the end
   return result;
 }
@@ -417,12 +434,14 @@ async function loadTasks() {
         ...t,
         category: t.category || 'other',
         done: t.status === 'done',
-        deadline: t.deadline ? t.deadline.split('T')[0] : null
+        deadline: toLocalYYYYMMDD(t.deadline)
       };
     });
   } catch (err) { console.error('[Persistence] Error loading tasks:', err); }
   renderTasks();
   renderScheduleTable();
+  renderCalendar();
+  if (document.getElementById('todayFocusView')?.style.display !== 'none') renderTodayFocusTasks();
 }
 
 function renderTasks(orderedIds) {
@@ -592,40 +611,71 @@ function closeRenameModal() {
 window.closeRenameModal = closeRenameModal;
 
 async function confirmRenameCategory() {
-  const catId = document.getElementById('renameCatId').value;
+  const oldCatId = document.getElementById('renameCatId').value;
   const newName = document.getElementById('renameCatInput').value.trim();
-  const cat = getCatById(catId);
+  const cat = getCatById(oldCatId);
   
   if (!newName || newName === cat.label) { closeRenameModal(); return; }
 
   const email = user?.email || localStorage.getItem('email') || '';
   
-  // Update definition locally
-  const custom = customCategories.find(c => c.id === catId);
-  if (custom) {
-    custom.label = newName;
-  } else {
-    // If it was a default, clone it to custom so we can track the name override
-    const newCat = { ...cat, label: newName };
-    customCategories.push(newCat);
-  }
-  
-  localStorage.setItem('mf_custom_cats', JSON.stringify(customCategories)); // Legacy fallback
-  
   try {
-    await fetch(`${API}/save-category`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userEmail: email, catId, label: newName, icon: cat.icon, color: cat.color, border: cat.border })
-    });
-    // Refresh local state
-    const res = await fetch(`${API}/get-categories?email=${encodeURIComponent(email)}`);
-    customCategories = (await res.json()).categories || [];
-  } catch { showToast('Error saving to server'); }
+    // 🎨 Fallback: If icon/color/border are missing (e.g. from a 'touched' default), restore from DEFAULT_CATEGORIES
+    const def = DEFAULT_CATEGORIES.find(dc => dc.id === oldCatId);
+    if (def) {
+      if (!cat.icon || cat.icon === '📋') cat.icon = def.icon;
+      if (!cat.color || cat.color === 'var(--card2)') cat.color = def.color;
+      if (!cat.border || cat.border === 'var(--border2)') cat.border = def.border;
+    }
 
-  showToast('Category renamed ✓');
+    // Determine if this category already has an origin tracking ID
+    const originalCatId = cat.original_cat_id || (def ? oldCatId : null);
+
+    const res = await fetch(`${API}/rename-category`, {
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        userEmail: email, 
+        oldCatId, 
+        newLabel: newName,
+        icon: cat.icon,
+        color: cat.color,
+        border: cat.border,
+        originalCatId // 🎯 Track source to prevent template cards from reappearing
+      })
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      // 1. Update local tasks slugs
+      tasks.forEach(t => {
+        if ((t.category || 'other') === oldCatId) t.category = data.newCatId;
+      });
+
+      // 2. Refresh local categories from DB
+      const r = await fetch(`${API}/get-categories?email=${encodeURIComponent(email)}`);
+      const catData = await r.json();
+      customCategories = catData.categories || [];
+      
+      showToast('Category renamed and tasks updated ✓');
+      
+      // 3. If we were viewing this category in the Detail View, update the view
+      if (currentCategory === oldCatId) {
+        currentCategory = data.newCatId;
+        openCategory(data.newCatId);
+      }
+    } else {
+      showToast(data.error || 'Error renaming category');
+    }
+  } catch (err) { 
+    console.error('Rename error:', err);
+    showToast('Error connecting to server'); 
+  }
+
   closeRenameModal();
   renderCategoryGrid();
 }
+
 window.confirmRenameCategory = confirmRenameCategory;
 
 function openDeleteModal(e, catId) {
@@ -702,7 +752,7 @@ function updateScheduleNavLabel(catLabel) {
   if (catLabel) {
     navItem.innerHTML = `<i class="fas fa-list-check"></i>Schedule <span class="ai-order-badge" style="font-size:.6rem;padding:.1rem .35rem;">${catLabel}</span>`;
   } else {
-    navItem.innerHTML = `<i class="fas fa-list-check"></i>View Schedule`;
+    navItem.innerHTML = `<i class="fas fa-list-check"></i>Task View`;
   }
 }
 window.updateScheduleNavLabel = updateScheduleNavLabel;
@@ -765,8 +815,8 @@ function openAddModal(dateStr) {
   document.getElementById('modalTitle').textContent = 'Add New Task';
   document.getElementById('editTaskId').value = '';
   document.getElementById('taskTitle').value = '';
-  // Enforce today as minimum date
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Enforce local today as minimum date
+  const todayStr = getTodayStr();
   const dl = document.getElementById('taskDeadline');
   dl.min = todayStr;
   dl.value = dateStr && dateStr >= todayStr ? dateStr : '';
@@ -789,7 +839,7 @@ function openEditModal(id) {
   document.getElementById('modalTitle').textContent = 'Edit Task';
   document.getElementById('editTaskId').value = id;
   document.getElementById('taskTitle').value = t.title || '';
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getTodayStr();
   const dl = document.getElementById('taskDeadline');
   dl.min = todayStr;
   dl.value = t.deadline || '';
@@ -821,7 +871,7 @@ async function submitTask() {
   const deadline = document.getElementById('taskDeadline').value;
   // Date validation: reject past dates
   if (deadline) {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getTodayStr();
     if (deadline < todayStr) { showToast('Please select today or a future date'); return; }
   }
   const priority = document.getElementById('taskPriority').value;
@@ -1079,7 +1129,7 @@ async function loadBehaviorInsights() {
     const highStressLogs = logs.filter(l => l.stress_level > 65);
     if (highStressLogs.length > 0) {
       const hours = highStressLogs.map(l => new Date(l.logged_at).getHours());
-      const avgHour = Math.round(hours.reduce((a,b)=>a+b,0)/hours.length);
+      const avgHour = Math.round(hours.reduce((a, b) => a + b, 0) / hours.length);
       const timeLabel = avgHour < 12 ? 'mornings' : avgHour < 17 ? 'afternoons' : 'evenings';
       patterns.push({
         icon: '⏰', bg: 'var(--red-dim)', color: 'var(--red)',
@@ -1422,7 +1472,7 @@ function renderWeeklyRecommendations(stressLogs, completionRate, improvement) {
   const el = document.getElementById('weeklyRecs');
   if (!el) return;
 
-  const avgStress = stressLogs.length > 0 ? Math.round(stressLogs.reduce((s,l)=>s+l.stress_level,0)/stressLogs.length) : 40;
+  const avgStress = stressLogs.length > 0 ? Math.round(stressLogs.reduce((s,l) => s+l.stress_level,0)/stressLogs.length) : 40;
   const recs = [];
 
   if (avgStress > 60) {
@@ -1458,4 +1508,130 @@ function renderWeeklyRecommendations(stressLogs, completionRate, improvement) {
       <div class="rec-num">${i+1}</div>
       <p>${r}</p>
     </div>`).join('');
+}
+
+// ── TODAY'S FOCUS LOGIC ──────────────────────────────────────────────────────
+let todayFocusTab = 'todo'; // 'todo' or 'completed'
+
+// 📅 Utility: Robust extraction of YYYY-MM-DD from any date value, correcting for UTC/Local shifts
+function toLocalYYYYMMDD(val) {
+  if (!val) return null;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return val.split(/[T\s]/)[0]; 
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+window.toLocalYYYYMMDD = toLocalYYYYMMDD;
+
+// 📅 Utility: Get YYYY-MM-DD for TODAY in user's LOCAL timezone
+function getTodayStr() {
+  return toLocalYYYYMMDD(new Date());
+}
+window.getTodayStr = getTodayStr;
+
+function openTodayFocus() {
+  document.getElementById('catGridView').style.display = 'none';
+  document.getElementById('todayFocusView').style.display = 'block';
+  document.getElementById('catDetailView').style.display = 'none';
+  renderTodayFocusTasks();
+}
+window.openTodayFocus = openTodayFocus;
+
+function closeTodayFocus() {
+  document.getElementById('catGridView').style.display = 'block';
+  document.getElementById('todayFocusView').style.display = 'none';
+  renderCategoryGrid();
+}
+window.closeTodayFocus = closeTodayFocus;
+
+function switchTodaySubTab(mode, btn) {
+  todayFocusTab = mode;
+  document.querySelectorAll('#todayFocusView .detect-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderTodayFocusTasks();
+}
+window.switchTodaySubTab = switchTodaySubTab;
+
+function openAddModalToday() {
+  openAddModal();
+  // Set date to local today
+  const today = getTodayStr();
+  const dateInput = document.getElementById('taskDeadline');
+  if (dateInput) dateInput.value = today;
+}
+window.openAddModalToday = openAddModalToday;
+
+function renderTodayFocusTasks() {
+  const body = document.getElementById('todayFocusBody');
+  if (!body) return;
+
+  const todayStr = getTodayStr();
+  
+  const todayTasks = tasks.filter(t => {
+    // 🚩 Logic: Include today's tasks OR overdue tasks if in 'todo' mode
+    const isToday = t.deadline === todayStr;
+    const isOverdue = t.deadline && t.deadline < todayStr;
+    
+    if (todayFocusTab === 'completed') {
+      return t.done && (isToday || isOverdue);
+    }
+    
+    // Default 'todo' view includes today + missed previous tasks
+    return !t.done && (isToday || isOverdue);
+  });
+
+  if (todayTasks.length === 0) {
+    body.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:3rem;">
+      <i class="fas fa-check-circle" style="font-size:2rem;display:block;margin-bottom:1rem;opacity:.3;"></i>
+      No ${todayFocusTab === 'completed' ? 'completed' : 'pending'} tasks for today.
+    </td></tr>`;
+    return;
+  }
+
+  body.innerHTML = todayTasks.map(t => {
+    const cat = getCatById(t.category);
+    return `
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:.6rem;">
+            <div class="status-dot ${t.done?'done':''}" onclick="toggleTask(${t.id})"></div>
+            <span style="${t.done?'text-decoration:line-through;opacity:.5;':''}">${t.title}</span>
+          </div>
+        </td>
+        <td><span class="badge" style="background:${cat.color};color:var(--text);border:1px solid ${cat.border}">${cat.icon} ${cat.label}</span></td>
+        <td><span class="priority-pill ${t.priority}">${t.priority}</span></td>
+        <td><span class="status-pill ${t.done?'done':'pending'}">${t.done?'Completed':'Pending'}</span></td>
+        <td style="text-align:center;">
+          <div style="display:flex;gap:.4rem;justify-content:center;">
+             <button class="btn-icon ${t.done?'warning':'success'}" onclick="toggleTask(${t.id})" title="${t.done?'Mark Pending':'Mark Complete'}">
+               <i class="fas ${t.done?'fa-rotate-left':'fa-check'}"></i>
+             </button>
+             <button class="btn-icon" onclick="openEditModal(${t.id})"><i class="fas fa-pen"></i></button>
+             <button class="btn-icon danger" onclick="deleteTask(${t.id})" title="Delete"><i class="fas fa-trash"></i></button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+window.renderTodayFocusTasks = renderTodayFocusTasks;
+
+// Enhance existing functions to refresh Today view if active
+if (typeof renderTasks === 'function') {
+  const _origRT = renderTasks;
+  window.renderTasks = function(ids) {
+    const r = _origRT(ids);
+    if (document.getElementById('todayFocusView')?.style.display !== 'none') renderTodayFocusTasks();
+    return r;
+  };
+}
+
+if (typeof toggleTask === 'function') {
+  const _origTT = toggleTask;
+  window.toggleTask = async function(id) {
+    await _origTT(id);
+    if (document.getElementById('todayFocusView')?.style.display !== 'none') renderTodayFocusTasks();
+  };
 }

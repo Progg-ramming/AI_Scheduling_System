@@ -145,6 +145,9 @@
 @media(max-width:900px){.cat-grid{grid-template-columns:repeat(3,1fr);}}
 @media(max-width:540px){.cat-grid{grid-template-columns:repeat(2,1fr);}}
 
+  .today-focus-link { font-size:.85rem; color:var(--text2); cursor:pointer; padding:.4rem .75rem; border-radius:var(--r-sm); transition:all .2s; background:var(--card2); border:1px solid var(--border); }
+  .today-focus-link:hover { color:var(--primary); border-color:var(--primary); background:var(--primary-dim); }
+  .today-focus-link i { color:var(--primary); margin-right:.4rem; }
 </style>
 </head>
 <body class="dashboard-page">
@@ -161,7 +164,7 @@
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Tasks</div>
-      <div class="nav-item" onclick="showPanel('schedule')"><i class="fas fa-list-check"></i>View Schedule</div>
+      <div class="nav-item" onclick="showPanel('schedule')"><i class="fas fa-list-check"></i>Task View</div>
       <div class="nav-item" onclick="openAddModal()"><i class="fas fa-plus-circle"></i>Add Task</div>
       <div class="nav-item" onclick="showPanel('calendar')"><i class="fas fa-calendar-alt"></i>Calendar</div>
     </div>
@@ -295,9 +298,37 @@
       <!-- Category grid (default view) -->
       <div id="catGridView">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;">
-          <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;"><i class="fas fa-list-check" style="color:var(--primary);margin-right:.5rem;"></i>Schedule by Category</h2>
+          <div style="display:flex;align-items:center;gap:1.5rem;">
+            <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;"><i class="fas fa-list-check" style="color:var(--primary);margin-right:.5rem;"></i>Schedule by Category</h2>
+            <span class="today-focus-link" onclick="openTodayFocus()"><i class="fas fa-bullseye"></i> Today's Focus</span>
+          </div>
+          <button class="btn btn-sm" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Task</button>
         </div>
         <div class="cat-grid" id="categoryGrid"></div>
+      </div>
+
+      <!-- Today's Focus Immersion View -->
+      <div id="todayFocusView" style="display:none;">
+        <div class="cat-view-header">
+          <span class="cat-breadcrumb" onclick="closeTodayFocus()"><i class="fas fa-chevron-left"></i> All Categories</span>
+          <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;flex:1;"><i class="fas fa-bullseye" style="color:var(--primary);margin-right:.5rem;"></i>Today's Focus</h2>
+          <div id="todayStressInfo" style="font-size:.75rem;color:var(--text3);"></div>
+        </div>
+        
+        <div style="display:flex;gap:.5rem;margin-bottom:1.25rem;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:.3rem;width:fit-content;">
+          <button class="detect-tab active" id="tf-todo" onclick="switchTodaySubTab('todo',this)"><i class="fas fa-list-ul"></i> To-do</button>
+          <button class="detect-tab" id="tf-completed" onclick="switchTodaySubTab('completed',this)"><i class="fas fa-circle-check"></i> Completed</button>
+          <button class="detect-tab" onclick="openAddModalToday()"><i class="fas fa-plus-circle"></i> Add Task</button>
+        </div>
+
+        <div class="card">
+          <div style="overflow-x:auto;">
+            <table class="schedule-table">
+              <thead><tr><th>Task</th><th>Category</th><th>Priority</th><th>Status</th><th style="text-align:center;">Actions</th></tr></thead>
+              <tbody id="todayFocusBody"><tr><td colspan="5" style="text-align:center;color:var(--text3);padding:2rem;">No tasks for today.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- Category detail view -->
