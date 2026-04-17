@@ -7,11 +7,23 @@ import sys
 import time
 import traceback
 import logging
+import joblib
+
 
 # ─── STARTUP BANNER (Shown immediately) ──────────────────────────────────────
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR   = os.path.abspath(os.path.join(BASE_DIR, ".."))
 MODELS_DIR = os.path.join(ROOT_DIR, "models")
+FINAL_MODEL_PATH = os.path.join(MODELS_DIR, "final_stress_model.pkl")
+
+if os.path.exists(FINAL_MODEL_PATH):
+    final_model = joblib.load(FINAL_MODEL_PATH)
+    print("[OK] Final stress model loaded")
+else:
+    print("[WARNING] Final model missing — using fallback")
+    final_model = None
+
+
 
 FACE_H5     = os.path.join(MODELS_DIR, "face_emotion_model.h5")
 VOICE_H5    = os.path.join(MODELS_DIR, "voice_emotion_model.h5")
@@ -166,15 +178,7 @@ else:
 FACE_EMOTION_LABELS  = ["Angry","Disgust","Fear","Happy","Sad","Surprise","Neutral"]
 VOICE_EMOTION_LABELS = ["neutral","calm","happy","sad","angry","fear","disgust","surprise"]
 
-EMOTION_TO_STRESS = {
-    "Happy":10,  "happy":10,  "calm":15,
-    "Neutral":35,"neutral":35,
-    "Surprise":40,"surprise":40,
-    "Sad":60,    "sad":60,
-    "Disgust":65,"disgust":65,
-    "Fear":80,   "fear":80,
-    "Angry":90,  "angry":90,
-}
+
 
 # ─── HEALTH ──────────────────────────────────────────────────────────────────
 @app.route('/health', methods=['GET'])
@@ -189,8 +193,14 @@ def health():
 # ─── COMBINED DETECTION ──────────────────────────────────────────────────────
 @app.route('/detect-combined', methods=['POST'])
 def detect_combined():
+    print("DEBUG:",
+            "face_model:", face_model is not None,
+            "voice_model:", voice_model is not None,
+            "frame:", 'frame' in request.files,
+            "audio:", 'audio' in request.files)         
     face_emotion  = "Neutral"
     face_stress   = 35
+    pred = np.array([[0,0,0,0,0,0,1]])  # default = Neutral
     voice_emotion = "neutral"
     voice_stress  = 35
     face_source   = "fallback"
@@ -216,13 +226,21 @@ def detect_combined():
                     roi = cv2.resize(roi, (48, 48))
                     roi = roi / 255.0
                     roi = np.reshape(roi, (1, 48, 48, 1))
-                    pred         = face_model.predict(roi, verbose=0)
+
+                    pred = face_model.predict(roi, verbose=0)
                     face_emotion = FACE_EMOTION_LABELS[np.argmax(pred)]
-                    face_stress  = EMOTION_TO_STRESS.get(face_emotion, 35)
-                    face_source  = "face_model"
+                    face_stress = float(np.max(pred) * 100)
+                    face_source = "face_model"
+
                     print("[Face]", face_emotion, face_stress)
+
                 else:
+                    # ✅ fallback when no face detected
+                    pred = np.array([[0,0,0,0,0,0,1]])  # Neutral
+                    face_emotion = "Neutral"
+                    face_stress = 35
                     face_source = "no_face_detected"
+
                     print("[Face] No face in frame")
         except Exception as e:
             print("[Face error]", e)
@@ -279,10 +297,45 @@ def detect_combined():
             print("[Voice] Model not loaded")
         if 'audio' not in request.files:
             print("[Voice] No audio received")
+            
+         
 
     # ── COMBINE ───────────────────────────────────────────────────────────────
-    combined = round((face_stress * 0.5) + (voice_stress * 0.5))
-    print("[Combined]", combined)
+   # Dummy geometric features (since no mediapipe here)
+    EAR = 0.25
+    MAR = 0.2
+    eyebrow_dist = 0.2
+
+    # Build feature vector (same as training)
+    try:
+        final_features = np.concatenate((
+            pred[0],
+            [EAR, MAR, eyebrow_dist],
+            [voice_stress]
+      ))
+      
+        #Intelligent fusion (no ML model needed)
+        combined = int((0.6 * face_stress) + (0.4 * voice_stress))
+
+        # Adjust based on emotion
+        if face_emotion in ["Angry", "Fear"]:
+            combined += 10
+        elif face_emotion == "Happy":
+            combined -= 10
+
+        # Clamp value
+        combined = max(0, min(100, combined))
+
+        print("[Combined AI]", combined)
+
+     # combined = int(final_model.predict([final_features])[0])
+
+    except Exception as e:
+       print("[Combine Error]", e)
+       combined = int((face_stress + voice_stress) / 2)           # voice feature
+    
+
+    
 
     return jsonify({
         "face_emotion":    face_emotion,

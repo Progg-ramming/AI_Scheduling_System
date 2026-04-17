@@ -6,13 +6,22 @@ const user = JSON.parse(localStorage.getItem('user') || 'null');
 if (!user) { window.location.href = 'login.html'; }
 else {
   const name = user.name || user.full_name || 'User';
-  document.getElementById('sidebarName').textContent = name;
-  document.getElementById('sidebarAvatar').textContent = name.charAt(0).toUpperCase();
+  const sidebarName = document.getElementById('sidebarName');
+if (sidebarName) sidebarName.textContent = name;
+  const sidebarAvatar = document.getElementById('sidebarAvatar');
+if (sidebarAvatar) sidebarAvatar.textContent = name.charAt(0).toUpperCase();
 }
 
 const h = new Date().getHours();
-document.getElementById('timeGreet').textContent = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
-document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'});
+const timeGreet = document.getElementById('timeGreet');
+if (timeGreet) {
+  timeGreet.textContent = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
+}
+
+const todayDate = document.getElementById('todayDate');
+if (todayDate) {
+  todayDate.textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'});
+}
 
 document.getElementById('logoutBtn').addEventListener('click', () => {
   localStorage.removeItem('user'); localStorage.removeItem('email');
@@ -180,8 +189,9 @@ async function captureCombined() {
       if (blob) fd.append('frame', blob, 'frame.jpg');
     }
 
-    const res = await fetch(`${API}/detect-combined`, { method: 'POST', body: fd });
-    const data = await res.json();
+    const res = await fetch(`${API}/analyze`, {method: 'POST', body: fd });
+if (!res.ok) throw new Error('Server error');
+const data = await res.json();
     const combined = data.combined_stress ?? 40;
     currentStressLevel = combined;
     const faceTag = data.face_emotion || 'Neutral';
@@ -195,6 +205,7 @@ async function captureCombined() {
     `;
     updateStressBadge(combined);
     updateStressStats(combined);
+    updateBackgroundByStress(combined);
     detectionSource = 'face_voice_scan';
     lastFaceEmotion = faceTag;
     lastVoiceEmotion = voiceTag;
@@ -247,10 +258,13 @@ async function analyzeStress() {
         ? 'Your stress is elevated. Start with lighter tasks to build momentum.'
         : "You're calm and focused — perfect for deep work. Tackle demanding tasks first."
     });
+    document.getElementById('aiSuggestion')?.scrollIntoView({ behavior: 'smooth' });
   }
+  
 
   updateStressBadge(currentStressLevel);
   updateStressStats(currentStressLevel);
+  updateBackgroundByStress(currentStressLevel);
 
   // Log stress
   try {
@@ -292,11 +306,25 @@ function updateStressBadge(level) {
   if (level <= 30)      { badge.classList.add('low');      badge.innerHTML = '<i class="fas fa-circle" style="font-size:.45rem;"></i> Low Stress'; }
   else if (level <= 60) { badge.classList.add('moderate'); badge.innerHTML = '<i class="fas fa-circle" style="font-size:.45rem;"></i> Moderate'; }
   else                  { badge.classList.add('high');     badge.innerHTML = '<i class="fas fa-circle" style="font-size:.45rem;"></i> High Stress'; }
+updateBackgroundByStress(level);
 }
+
 
 function updateStressStats(level) {
   document.getElementById('statStress').textContent = level + '/100';
   document.getElementById('statStressSub').textContent = STRESS_LABELS[Math.min(level, 100)] || '';
+}
+
+function updateBackgroundByStress(level) {
+  const root = document.documentElement;
+
+  if (level <= 30) {
+    root.style.setProperty('--bg', '#0f172a');
+  } else if (level <= 60) {
+    root.style.setProperty('--bg', '#1e293b');
+  } else {
+    root.style.setProperty('--bg', '#2d1b1b');
+  }
 }
 
 // ── TASKS ─────────────────────────────────────────────

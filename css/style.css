@@ -65,6 +65,10 @@
   --shadow-hover:  0 8px 24px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.06);
   --shadow-lg:     0 16px 48px rgba(0,0,0,0.14);
   
+  /*base background for smooth transition*/
+  --bg: #0f172a;
+  background: var(--bg);
+  transition: background 0.4s ease;
   /* ── RADIUS ── */
   --r:            16px;
   --r-sm:         12px;
@@ -171,6 +175,19 @@ a:hover { color: var(--primary); }
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .card:hover { box-shadow: var(--shadow-hover); }
+
+/*glassmorphism effect for all cards and panels*/
+.card, .panel, .task-item {
+  backdrop-filter: blur(12px);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+/*Subtle lift effect on hover for cards and task items*/
+.task-item:hover, .card:hover {
+  transform: translateY(-4px) scale(1.01);
+  transition: all 0.25s ease;
+}
 
 /* Secondary Card (Chai) */
 .card-secondary {

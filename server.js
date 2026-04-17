@@ -12,6 +12,7 @@ const FormData  = require('form-data');
 require('dotenv').config();
 
 const app    = express();
+app.use(express.json())
 const PORT   = 3000;
 
 // Disk storage for logs/videos
@@ -332,7 +333,7 @@ app.post('/delete-task', async (req, res) => {
 
 // ─── ANALYZE STRESS + SCHEDULE TASKS ────────────────────────────────────────
 app.post('/analyze', async (req, res) => {
-    const { stressLevel, note, userEmail } = req.body;
+    const { stressLevel, note, userEmail } = req.body || {};
 
     // Fetch user's real tasks from DB
     let userTasks = [];
