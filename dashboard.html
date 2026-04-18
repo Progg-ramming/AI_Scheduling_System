@@ -160,9 +160,23 @@
 @media(max-width:900px){.cat-grid{grid-template-columns:repeat(3,1fr);}}
 @media(max-width:540px){.cat-grid{grid-template-columns:repeat(2,1fr);}}
 
-  .today-focus-link { font-size:.85rem; color:var(--text2); cursor:pointer; padding:.4rem .75rem; border-radius:var(--r-sm); transition:all .2s; background:var(--card2); border:1px solid var(--border); }
-  .today-focus-link:hover { color:var(--primary); border-color:var(--primary); background:var(--primary-dim); }
-  .today-focus-link i { color:var(--primary); margin-right:.4rem; }
+  .today-focus-link { 
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size:.82rem; font-weight: 700; color:#fff; cursor:pointer; 
+    padding:.5rem 1.1rem; border-radius:30px; transition:all .3s ease; 
+    background: linear-gradient(135deg, rgba(129,140,248,0.25), rgba(167,139,250,0.2)); 
+    border: 1px solid rgba(129,140,248,0.45);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15), inset 0 0 10px rgba(129,140,248,0.1);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .today-focus-link:hover { 
+    background: linear-gradient(135deg, rgba(129,140,248,0.4), rgba(167,139,250,0.3)); 
+    border-color: rgba(129,140,248,0.8); 
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(129,140,248,0.3), 0 0 15px rgba(129,140,248,0.15);
+    color: #fff;
+  }
+  .today-focus-link i { margin-right:.5rem; font-size: .95rem; color: var(--accent); }
 
   /* ── CALENDAR DATE VIEW ── */
   .cal-date-hero {
