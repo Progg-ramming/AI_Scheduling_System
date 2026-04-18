@@ -23,6 +23,6 @@ echo.
 
 :: 4. Automatically open the browser
 timeout /t 3 /nobreak > nul
-start "" "http://127.0.0.1:3000/dashboard.html"
+start "" "http://127.0.0.1:3000"
 
 exit

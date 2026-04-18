@@ -729,7 +729,23 @@ function openCategory(catId) {
   
   const detailBtn = document.getElementById('catDetailBtn');
   if (detailBtn) {
-    detailBtn.innerHTML = cat.id === 'other' ? '<i class="fas fa-plus"></i> Add Category' : '<i class="fas fa-plus"></i> Add Task';
+    if (cat.id === 'other') {
+      // Show both buttons for the "Other" category
+      detailBtn.outerHTML = `
+        <div id="catDetailBtnGroup" style="display:flex;gap:.5rem;">
+          <button class="btn btn-sm btn-secondary" id="catDetailBtn" onclick="openAddModal()" style="background:var(--card2);border:1px solid var(--border2);color:var(--text2);"><i class="fas fa-plus"></i> Add Task</button>
+          <button class="btn btn-sm" onclick="promptAddCategory()"><i class="fas fa-folder-plus"></i> Add Category</button>
+        </div>`;
+    } else {
+      // Restore single button if coming back from "Other"
+      const grp = document.getElementById('catDetailBtnGroup');
+      if (grp) {
+        grp.outerHTML = `<button class="btn btn-sm" id="catDetailBtn" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Task</button>`;
+      } else {
+        detailBtn.innerHTML = '<i class="fas fa-plus"></i> Add Task';
+        detailBtn.onclick = () => openAddModal();
+      }
+    }
   }
   
   updateScheduleNavLabel(cat.label);
@@ -1276,6 +1292,35 @@ function handleCategorySelect(sel) {
 }
 window.handleCategorySelect = handleCategorySelect;
 
+// Opens the task modal pre-configured to add a new category
+function promptAddCategory() {
+  renderCategoryOptions();
+  document.getElementById('modalTitle').textContent = 'Add New Category';
+  document.getElementById('editTaskId').value = '';
+  document.getElementById('taskTitle').value = '';
+  const todayStr = getTodayStr();
+  const dl = document.getElementById('taskDeadline');
+  dl.min = todayStr;
+  dl.value = '';
+  document.getElementById('taskPriority').value = 'medium';
+  document.getElementById('taskNotes').value = '';
+
+  // Force "other" selected so the new-category input appears
+  const catSel = document.getElementById('taskCategory');
+  if (catSel) {
+    catSel.value = 'other';
+    handleCategorySelect(catSel);
+  }
+
+  document.getElementById('taskModal').classList.add('open');
+  // Focus the new category name field immediately
+  setTimeout(() => {
+    const inp = document.getElementById('newCatInput');
+    if (inp) inp.focus();
+  }, 120);
+}
+window.promptAddCategory = promptAddCategory;
+
 async function addCustomCategory() {
   const input = document.getElementById('newCatInput');
   const raw = input?.value.trim();
@@ -1535,6 +1580,7 @@ function openTodayFocus() {
   document.getElementById('catGridView').style.display = 'none';
   document.getElementById('todayFocusView').style.display = 'block';
   document.getElementById('catDetailView').style.display = 'none';
+  document.getElementById('viewAllTasksView').style.display = 'none';
   renderTodayFocusTasks();
 }
 window.openTodayFocus = openTodayFocus;
@@ -1542,9 +1588,105 @@ window.openTodayFocus = openTodayFocus;
 function closeTodayFocus() {
   document.getElementById('catGridView').style.display = 'block';
   document.getElementById('todayFocusView').style.display = 'none';
+  document.getElementById('viewAllTasksView').style.display = 'none';
   renderCategoryGrid();
 }
 window.closeTodayFocus = closeTodayFocus;
+
+// ── VIEW ALL TASKS LOGIC ─────────────────────────────────────────────────────
+let viewAllTab = 'todo'; // 'todo' or 'completed'
+
+function openViewAllTasks() {
+  document.getElementById('catGridView').style.display = 'none';
+  document.getElementById('todayFocusView').style.display = 'none';
+  document.getElementById('catDetailView').style.display = 'none';
+  document.getElementById('viewAllTasksView').style.display = 'block';
+  // Reset to todo tab
+  viewAllTab = 'todo';
+  document.querySelectorAll('#viewAllTasksView .detect-tab').forEach(b => b.classList.remove('active'));
+  const todoBtn = document.getElementById('va-todo');
+  if (todoBtn) todoBtn.classList.add('active');
+  renderViewAllTasks();
+}
+window.openViewAllTasks = openViewAllTasks;
+
+function closeViewAllTasks() {
+  document.getElementById('catGridView').style.display = 'block';
+  document.getElementById('viewAllTasksView').style.display = 'none';
+  renderCategoryGrid();
+}
+window.closeViewAllTasks = closeViewAllTasks;
+
+function switchViewAllSubTab(mode, btn) {
+  viewAllTab = mode;
+  document.querySelectorAll('#viewAllTasksView .detect-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderViewAllTasks();
+}
+window.switchViewAllSubTab = switchViewAllSubTab;
+
+function renderViewAllTasks() {
+  const body = document.getElementById('viewAllBody');
+  if (!body) return;
+
+  let list = [...tasks];
+
+  if (viewAllTab === 'completed') {
+    list = list.filter(t => t.done);
+  } else {
+    list = list.filter(t => !t.done);
+  }
+
+  // Sort: tasks with deadline first (ascending), then no-deadline tasks
+  list.sort((a, b) => {
+    if (!a.deadline && !b.deadline) return 0;
+    if (!a.deadline) return 1;
+    if (!b.deadline) return -1;
+    return a.deadline.localeCompare(b.deadline);
+  });
+
+  if (list.length === 0) {
+    body.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:3rem;">
+      <i class="fas fa-check-circle" style="font-size:2rem;display:block;margin-bottom:1rem;opacity:.3;"></i>
+      No ${viewAllTab === 'completed' ? 'completed' : 'pending'} tasks yet.
+    </td></tr>`;
+    return;
+  }
+
+  const todayStr = getTodayStr();
+  const pColor = { high: 'var(--red)', medium: 'var(--yellow)', low: 'var(--green)' };
+
+  body.innerHTML = list.map(t => {
+    const cat = getCatById(t.category);
+    const isOverdue = t.deadline && t.deadline < todayStr && !t.done;
+    const deadlineDisplay = t.deadline
+      ? `<span style="color:${isOverdue ? 'var(--red)' : 'var(--text2)'}">${t.deadline}${isOverdue ? ' <span style="font-size:.65rem;font-weight:600;">Overdue</span>' : ''}</span>`
+      : '<span style="color:var(--text3)">—</span>';
+
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:.6rem;">
+          <div class="status-dot ${t.done ? 'done' : ''}" onclick="toggleTask(${t.id})"></div>
+          <span style="${t.done ? 'text-decoration:line-through;opacity:.5;' : ''}">${t.title}</span>
+        </div>
+      </td>
+      <td>${deadlineDisplay}</td>
+      <td><span class="badge" style="background:${cat.color};color:var(--text);border:1px solid ${cat.border}">${cat.icon} ${cat.label}</span></td>
+      <td><span style="font-weight:600;color:${pColor[t.priority||'medium']}">${(t.priority||'medium').charAt(0).toUpperCase()+(t.priority||'medium').slice(1)}</span></td>
+      <td><span class="status-pill ${t.done ? 'done' : 'pending'}">${t.done ? 'Completed' : 'Pending'}</span></td>
+      <td style="text-align:center;">
+        <div style="display:flex;gap:.4rem;justify-content:center;">
+          <button class="btn-icon ${t.done ? 'warning' : 'success'}" onclick="toggleTask(${t.id})" title="${t.done ? 'Mark Pending' : 'Mark Complete'}">
+            <i class="fas ${t.done ? 'fa-rotate-left' : 'fa-check'}"></i>
+          </button>
+          <button class="btn-icon" onclick="openEditModal(${t.id})"><i class="fas fa-pen"></i></button>
+          <button class="btn-icon danger" onclick="deleteTask(${t.id})" title="Delete"><i class="fas fa-trash"></i></button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+window.renderViewAllTasks = renderViewAllTasks;
 
 function switchTodaySubTab(mode, btn) {
   todayFocusTab = mode;
@@ -1570,16 +1712,15 @@ function renderTodayFocusTasks() {
   const todayStr = getTodayStr();
   
   const todayTasks = tasks.filter(t => {
-    // 🚩 Logic: Include today's tasks OR overdue tasks if in 'todo' mode
+    // 🚩 Logic: Include ONLY today's tasks (no overdue from previous days)
     const isToday = t.deadline === todayStr;
-    const isOverdue = t.deadline && t.deadline < todayStr;
-    
+
     if (todayFocusTab === 'completed') {
-      return t.done && (isToday || isOverdue);
+      return t.done && isToday;
     }
-    
-    // Default 'todo' view includes today + missed previous tasks
-    return !t.done && (isToday || isOverdue);
+
+    // Default 'todo' view: only uncompleted tasks due today
+    return !t.done && isToday;
   });
 
   if (todayTasks.length === 0) {
@@ -1618,12 +1759,13 @@ function renderTodayFocusTasks() {
 }
 window.renderTodayFocusTasks = renderTodayFocusTasks;
 
-// Enhance existing functions to refresh Today view if active
+// Enhance existing functions to refresh Today view AND View All if active
 if (typeof renderTasks === 'function') {
   const _origRT = renderTasks;
   window.renderTasks = function(ids) {
     const r = _origRT(ids);
     if (document.getElementById('todayFocusView')?.style.display !== 'none') renderTodayFocusTasks();
+    if (document.getElementById('viewAllTasksView')?.style.display !== 'none') renderViewAllTasks();
     return r;
   };
 }
@@ -1633,5 +1775,6 @@ if (typeof toggleTask === 'function') {
   window.toggleTask = async function(id) {
     await _origTT(id);
     if (document.getElementById('todayFocusView')?.style.display !== 'none') renderTodayFocusTasks();
+    if (document.getElementById('viewAllTasksView')?.style.display !== 'none') renderViewAllTasks();
   };
 }
