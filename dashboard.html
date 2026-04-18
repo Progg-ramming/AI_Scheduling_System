@@ -148,6 +148,28 @@
   .today-focus-link { font-size:.85rem; color:var(--text2); cursor:pointer; padding:.4rem .75rem; border-radius:var(--r-sm); transition:all .2s; background:var(--card2); border:1px solid var(--border); }
   .today-focus-link:hover { color:var(--primary); border-color:var(--primary); background:var(--primary-dim); }
   .today-focus-link i { color:var(--primary); margin-right:.4rem; }
+
+  /* ── CALENDAR DATE VIEW ── */
+  .cal-date-hero {
+    display:flex;align-items:center;gap:1rem;padding:1.25rem 1.5rem;
+    background:linear-gradient(135deg,var(--primary-dim),rgba(118,75,162,.08));
+    border:1px solid rgba(102,126,234,.2);border-radius:var(--r);margin-bottom:1.5rem;
+  }
+  .cal-date-hero-icon {
+    width:52px;height:52px;border-radius:14px;
+    background:var(--primary-dim);border:1px solid rgba(102,126,234,.3);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .cal-date-hero-day { font-size:1.3rem;font-weight:700;color:var(--primary);line-height:1; }
+  .cal-date-hero-mon { font-size:.55rem;text-transform:uppercase;letter-spacing:.08em;color:var(--primary);opacity:.8; }
+  .cal-date-hero-label { flex:1; }
+  .cal-date-hero-label h3 { font-family:'Playfair Display',serif;font-size:1.15rem;font-weight:400;margin-bottom:.2rem; }
+  .cal-date-hero-label p  { font-size:.8rem;color:var(--text3); }
+  .cal-date-task-count {
+    background:var(--primary-dim);color:var(--primary);
+    border:1px solid rgba(102,126,234,.25);border-radius:20px;
+    padding:.3rem .85rem;font-size:.8rem;font-weight:600;
+  }
 </style>
 </head>
 <body class="dashboard-page">
@@ -165,7 +187,7 @@
     <div class="nav-section">
       <div class="nav-section-label">Tasks</div>
       <div class="nav-item" onclick="showPanel('schedule')"><i class="fas fa-list-check"></i>Task View</div>
-      <div class="nav-item" onclick="openAddModal()"><i class="fas fa-plus-circle"></i>Add Task</div>
+      <div class="nav-item action-item" onclick="openAddModal()"><i class="fas fa-plus-circle"></i>Add Task</div>
       <div class="nav-item" onclick="showPanel('calendar')"><i class="fas fa-calendar-alt"></i>Calendar</div>
     </div>
     <div class="nav-section">
@@ -319,7 +341,7 @@
         <div style="display:flex;gap:.5rem;margin-bottom:1.25rem;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:.3rem;width:fit-content;">
           <button class="detect-tab active" id="tf-todo" onclick="switchTodaySubTab('todo',this)"><i class="fas fa-list-ul"></i> To-do</button>
           <button class="detect-tab" id="tf-completed" onclick="switchTodaySubTab('completed',this)"><i class="fas fa-circle-check"></i> Completed</button>
-          <button class="detect-tab" onclick="openAddModalToday()"><i class="fas fa-plus-circle"></i> Add Task</button>
+          <button class="detect-tab action" onclick="openAddModalToday()"><i class="fas fa-plus-circle"></i> Add Task</button>
         </div>
 
         <div class="card">
@@ -342,7 +364,7 @@
         <div style="display:flex;gap:.5rem;margin-bottom:1.25rem;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:.3rem;width:fit-content;">
           <button class="detect-tab active" id="va-todo" onclick="switchViewAllSubTab('todo',this)"><i class="fas fa-list-ul"></i> To-do</button>
           <button class="detect-tab" id="va-completed" onclick="switchViewAllSubTab('completed',this)"><i class="fas fa-circle-check"></i> Completed</button>
-          <button class="detect-tab" onclick="openAddModal()"><i class="fas fa-plus-circle"></i> Add Task</button>
+          <button class="detect-tab action" onclick="openAddModal()"><i class="fas fa-plus-circle"></i> Add Task</button>
         </div>
 
         <div class="card">
@@ -377,20 +399,59 @@
 
     <!-- ═══ CALENDAR ═══ -->
     <div class="panel" id="panel-calendar">
-      <div class="cal-wrap">
-        <div class="cal-nav" style="justify-content:space-between;">
-          <input type="month" id="calMonthPicker" style="background:var(--card2);color:var(--text);font-size:1rem;font-family:'Playfair Display',serif;font-weight:600;border:1px solid var(--border);padding:0.3rem 0.5rem;border-radius:var(--r-sm);outline:none;cursor:pointer;" onchange="handleMonthPicker(this.value)">
-          <div style="display:flex;gap:0.5rem;">
-            <button class="cal-nav-btn" id="calPrev"><i class="fas fa-chevron-left"></i></button>
-            <button class="cal-nav-btn" id="calNext"><i class="fas fa-chevron-right"></i></button>
+
+      <!-- Calendar Grid View (default) -->
+      <div id="calGridView">
+        <div class="cal-wrap">
+          <div class="cal-nav" style="justify-content:space-between;">
+            <input type="month" id="calMonthPicker" style="background:var(--card2);color:var(--text);font-size:1rem;font-family:'Playfair Display',serif;font-weight:600;border:1px solid var(--border);padding:0.3rem 0.5rem;border-radius:var(--r-sm);outline:none;cursor:pointer;" onchange="handleMonthPicker(this.value)">
+            <div style="display:flex;gap:0.5rem;">
+              <button class="cal-nav-btn" id="calPrev"><i class="fas fa-chevron-left"></i></button>
+              <button class="cal-nav-btn" id="calNext"><i class="fas fa-chevron-right"></i></button>
+            </div>
           </div>
-        </div>
-        <div class="cal-grid" id="calGrid"></div>
-        <p style="font-size:.8rem;color:var(--primary);margin-top:1rem;min-height:1.2rem;" id="calSelected"></p>
-        <div style="display:flex;justify-content:flex-end;margin-top:1rem;">
-          <button class="btn btn-sm" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Task</button>
+          <div class="cal-grid" id="calGrid"></div>
+          <p style="font-size:.8rem;color:var(--text3);margin-top:.75rem;min-height:1.2rem;" id="calSelected">Click any date to view or add tasks</p>
         </div>
       </div>
+
+      <!-- Calendar Date Detail View -->
+      <div id="calDateView" style="display:none;">
+        <div class="cat-view-header">
+          <span class="cat-breadcrumb" onclick="closeCalendarDateView()"><i class="fas fa-chevron-left"></i> Calendar</span>
+          <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;flex:1;" id="calDateViewTitle"><i class="fas fa-calendar-day" style="color:var(--primary);margin-right:.5rem;"></i>Date Tasks</h2>
+        </div>
+
+        <!-- Date hero card -->
+        <div class="cal-date-hero">
+          <div class="cal-date-hero-icon">
+            <div class="cal-date-hero-day" id="calDateHeroDay"></div>
+            <div class="cal-date-hero-mon" id="calDateHeroMon"></div>
+          </div>
+          <div class="cal-date-hero-label">
+            <h3 id="calDateHeroFull"></h3>
+            <p id="calDateHeroSub"></p>
+          </div>
+          <div class="cal-date-task-count" id="calDateTaskCount">0 tasks</div>
+        </div>
+
+        <!-- Sub-tab bar -->
+        <div style="display:flex;gap:.5rem;margin-bottom:1.25rem;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:.3rem;width:fit-content;">
+          <button class="detect-tab active" id="cd-todo" onclick="switchCalDateTab('todo',this)"><i class="fas fa-list-ul"></i> To-do</button>
+          <button class="detect-tab" id="cd-completed" onclick="switchCalDateTab('completed',this)"><i class="fas fa-circle-check"></i> Completed</button>
+          <button class="detect-tab action" onclick="openAddModalForDate()"><i class="fas fa-plus-circle"></i> Add Task</button>
+        </div>
+
+        <div class="card">
+          <div style="overflow-x:auto;">
+            <table class="schedule-table">
+              <thead><tr><th>Task</th><th>Category</th><th>Priority</th><th>Status</th><th style="text-align:center;">Actions</th></tr></thead>
+              <tbody id="calDateBody"><tr><td colspan="5" style="text-align:center;color:var(--text3);padding:2rem;">No tasks for this date.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ═══ ANALYTICS ═══ -->

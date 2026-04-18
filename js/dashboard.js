@@ -29,7 +29,15 @@ function showPanel(name) {
   const fab = document.querySelector('.fab');
   if (fab) fab.style.display = name === 'schedule' ? 'none' : 'flex';
 
-  if (name === 'calendar')  renderCalendar();
+  if (name === 'calendar') {
+    // Always go back to the grid view when navigating via sidebar
+    if (document.getElementById('calDateView')?.style.display !== 'none') {
+      document.getElementById('calDateView').style.display = 'none';
+      document.getElementById('calGridView').style.display = 'block';
+      calDateViewDate = null;
+    }
+    renderCalendar();
+  }
   if (name === 'schedule')  { if (currentCategory) { renderScheduleTable(lastAiOrder); } else { renderCategoryGrid(); } }
   if (name === 'analytics') { loadBehaviorInsights(); updateSmartScheduling(); }
   if (name === 'history')   loadRecentActivity();
@@ -949,6 +957,7 @@ async function submitTask() {
   closeModal();
   renderTasks(lastAiOrder); renderScheduleTable(lastAiOrder); renderCalendar();
   if (document.getElementById('catGridView')?.style.display !== 'none') renderCategoryGrid();
+  if (document.getElementById('calDateView')?.style.display !== 'none') renderCalDateTasks();
 }
 window.submitTask = submitTask;
 
@@ -956,8 +965,23 @@ window.submitTask = submitTask;
 let calY, calM;
 const taskedDates = new Set();
 
+// Calendar date detail view state
+let calDateViewDate = null;  // YYYY-MM-DD string of currently viewed date
+let calDateTab = 'todo';     // 'todo' | 'completed'
+
 function initCalendar() {
   const n = new Date(); calY = n.getFullYear(); calM = n.getMonth();
+  // Restore last viewed month from localStorage so refresh keeps the same month
+  try {
+    const saved = JSON.parse(localStorage.getItem('mf_cal_month') || 'null');
+    if (saved && typeof saved.y === 'number' && typeof saved.m === 'number') {
+      calY = saved.y; calM = saved.m;
+    }
+  } catch {}
+}
+
+function saveCalMonth() {
+  try { localStorage.setItem('mf_cal_month', JSON.stringify({ y: calY, m: calM })); } catch {}
 }
 
 function renderCalendar() {
@@ -983,26 +1007,171 @@ function renderCalendar() {
   }
   document.getElementById('calGrid').innerHTML = html;
   document.querySelectorAll('.cal-day[data-date]').forEach(el => {
-    el.addEventListener('click', function(e) {
-      if (e.target.classList.contains('cal-task-item')) return;
-      const lbl = new Date(this.dataset.date + 'T00:00:00').toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'});
-      document.getElementById('calSelected').textContent = `Selected: ${lbl}`;
-      openAddModal(this.dataset.date);
+    el.addEventListener('click', function() {
+      openCalendarDateView(this.dataset.date);
     });
   });
 }
+
+// ── CALENDAR DATE VIEW ────────────────────────────────
+function openCalendarDateView(dateStr) {
+  calDateViewDate = dateStr;
+  calDateTab = 'todo';
+
+  // Swap panels
+  document.getElementById('calGridView').style.display = 'none';
+  document.getElementById('calDateView').style.display = 'block';
+
+  // Populate hero card
+  const dt = new Date(dateStr + 'T00:00:00');
+  const day     = dt.getDate();
+  const mon     = dt.toLocaleDateString('en-IN', { month: 'short' }).toUpperCase();
+  const full    = dt.toLocaleDateString('en-IN', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  const todayStr = getTodayStr();
+  const isPast  = dateStr < todayStr;
+  const isToday = dateStr === todayStr;
+  const rel     = isToday ? '📅 Today' : isPast ? '🔒 Past date — view only' : '🗓️ Upcoming';
+
+  document.getElementById('calDateHeroDay').textContent  = day;
+  document.getElementById('calDateHeroMon').textContent  = mon;
+  document.getElementById('calDateHeroFull').textContent = full;
+  document.getElementById('calDateHeroSub').textContent  = rel;
+  document.getElementById('calDateViewTitle').innerHTML  =
+    `<i class="fas fa-calendar-day" style="color:var(--primary);margin-right:.5rem;"></i>${full}`;
+
+  // Dim hero for past dates + apply theme classes
+  const hero = document.querySelector('.cal-date-hero');
+  if (hero) {
+    hero.style.opacity = isPast ? '0.72' : '1';
+    hero.classList.remove('is-today', 'is-past');
+    if (isToday) hero.classList.add('is-today');
+    else if (isPast) hero.classList.add('is-past');
+  }
+
+  // Color the sub-label
+  const subEl = document.getElementById('calDateHeroSub');
+  if (subEl) {
+    subEl.style.color = isToday ? 'var(--primary)' : isPast ? 'var(--text3)' : 'var(--green)';
+    subEl.style.fontWeight = isToday ? '600' : '400';
+  }
+
+  // Show/hide Add Task tab based on whether date is past
+  // Selector targets the 3rd detect-tab button (Add Task) inside #calDateView
+  const addTaskTab = document.querySelector('#calDateView .detect-tab:last-child');
+  if (addTaskTab) {
+    addTaskTab.style.display = isPast ? 'none' : '';
+  }
+
+  // Reset active tab
+  document.querySelectorAll('#calDateView .detect-tab').forEach(b => b.classList.remove('active'));
+  const todoBtn = document.getElementById('cd-todo');
+  if (todoBtn) todoBtn.classList.add('active');
+
+  renderCalDateTasks();
+}
+window.openCalendarDateView = openCalendarDateView;
+
+function closeCalendarDateView() {
+  calDateViewDate = null;
+  document.getElementById('calDateView').style.display = 'none';
+  document.getElementById('calGridView').style.display = 'block';
+}
+window.closeCalendarDateView = closeCalendarDateView;
+
+function switchCalDateTab(mode, btn) {
+  calDateTab = mode;
+  document.querySelectorAll('#calDateView .detect-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderCalDateTasks();
+}
+window.switchCalDateTab = switchCalDateTab;
+
+function renderCalDateTasks() {
+  const body = document.getElementById('calDateBody');
+  if (!body || !calDateViewDate) return;
+
+  const dateTasks = tasks.filter(t => {
+    const dl = t.deadline ? t.deadline.split('T')[0] : null;
+    if (dl !== calDateViewDate) return false;
+    return calDateTab === 'completed' ? t.done : !t.done;
+  });
+
+  // Update task count badge (total for the date, not just current tab)
+  const total = tasks.filter(t => {
+    const dl = t.deadline ? t.deadline.split('T')[0] : null;
+    return dl === calDateViewDate;
+  }).length;
+  const countEl = document.getElementById('calDateTaskCount');
+  if (countEl) countEl.textContent = total === 0 ? 'No tasks' : total === 1 ? '1 task' : `${total} tasks`;
+
+  if (dateTasks.length === 0) {
+    body.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:3rem;">
+      <i class="fas fa-calendar-check" style="font-size:2rem;display:block;margin-bottom:1rem;opacity:.3;"></i>
+      No ${calDateTab === 'completed' ? 'completed' : 'pending'} tasks for this date.
+      ${calDateTab === 'todo' ? '<br><small style="font-size:.8rem;margin-top:.5rem;display:block;">Click <b>Add Task</b> above to add one.</small>' : ''}
+    </td></tr>`;
+    return;
+  }
+
+  const pColor = { high: 'var(--red)', medium: 'var(--yellow)', low: 'var(--green)' };
+  body.innerHTML = dateTasks.map(t => {
+    const cat = getCatById(t.category);
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:.6rem;">
+          <div class="status-dot ${t.done?'done':''}" onclick="toggleTask(${t.id})"></div>
+          <span style="${t.done?'text-decoration:line-through;opacity:.5;':''}"> ${t.title}</span>
+        </div>
+      </td>
+      <td><span class="badge" style="background:${cat.color};color:var(--text);border:1px solid ${cat.border}">${cat.icon} ${cat.label}</span></td>
+      <td><span style="font-weight:600;color:${pColor[t.priority||'medium']}">${(t.priority||'medium').charAt(0).toUpperCase()+(t.priority||'medium').slice(1)}</span></td>
+      <td><span class="status-pill ${t.done?'done':'pending'}">${t.done?'Completed':'Pending'}</span></td>
+      <td style="text-align:center;">
+        <div style="display:flex;gap:.4rem;justify-content:center;">
+          <button class="btn-icon ${t.done?'warning':'success'}" onclick="toggleTask(${t.id})" title="${t.done?'Mark Pending':'Mark Complete'}">
+            <i class="fas ${t.done?'fa-rotate-left':'fa-check'}"></i>
+          </button>
+          <button class="btn-icon" onclick="openEditModal(${t.id})"><i class="fas fa-pen"></i></button>
+          <button class="btn-icon danger" onclick="deleteTask(${t.id})" title="Delete"><i class="fas fa-trash"></i></button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+window.renderCalDateTasks = renderCalDateTasks;
+
+function openAddModalForDate() {
+  const todayStr = getTodayStr();
+  // Block task creation for past dates
+  if (calDateViewDate && calDateViewDate < todayStr) {
+    showToast('Cannot add tasks for past dates');
+    return;
+  }
+  // Open modal pre-filled with the selected date (today or future only)
+  openAddModal(calDateViewDate || todayStr);
+}
+window.openAddModalForDate = openAddModalForDate;
 
 function handleMonthPicker(val) {
   if (!val) return;
   const parts = val.split('-');
   calY = parseInt(parts[0]); calM = parseInt(parts[1]) - 1;
+  saveCalMonth();
   renderCalendar();
   document.getElementById('calSelected').textContent = '';
 }
 window.handleMonthPicker = handleMonthPicker;
 
-document.getElementById('calPrev').addEventListener('click', () => { calM--; if(calM<0){calM=11;calY--;} renderCalendar(); document.getElementById('calSelected').textContent=''; });
-document.getElementById('calNext').addEventListener('click', () => { calM++; if(calM>11){calM=0;calY++;} renderCalendar(); document.getElementById('calSelected').textContent=''; });
+document.getElementById('calPrev').addEventListener('click', () => {
+  calM--; if (calM < 0) { calM = 11; calY--; }
+  saveCalMonth(); renderCalendar();
+  document.getElementById('calSelected').textContent = '';
+});
+document.getElementById('calNext').addEventListener('click', () => {
+  calM++; if (calM > 11) { calM = 0; calY++; }
+  saveCalMonth(); renderCalendar();
+  document.getElementById('calSelected').textContent = '';
+});
 
 // ── RECENT ACTIVITY + HISTORY ─────────────────────────
 async function loadRecentActivity() {
@@ -1759,13 +1928,14 @@ function renderTodayFocusTasks() {
 }
 window.renderTodayFocusTasks = renderTodayFocusTasks;
 
-// Enhance existing functions to refresh Today view AND View All if active
+// Enhance existing functions to refresh Today view, View All AND Calendar Date view if active
 if (typeof renderTasks === 'function') {
   const _origRT = renderTasks;
   window.renderTasks = function(ids) {
     const r = _origRT(ids);
     if (document.getElementById('todayFocusView')?.style.display !== 'none') renderTodayFocusTasks();
     if (document.getElementById('viewAllTasksView')?.style.display !== 'none') renderViewAllTasks();
+    if (document.getElementById('calDateView')?.style.display !== 'none') renderCalDateTasks();
     return r;
   };
 }
@@ -1776,5 +1946,6 @@ if (typeof toggleTask === 'function') {
     await _origTT(id);
     if (document.getElementById('todayFocusView')?.style.display !== 'none') renderTodayFocusTasks();
     if (document.getElementById('viewAllTasksView')?.style.display !== 'none') renderViewAllTasks();
+    if (document.getElementById('calDateView')?.style.display !== 'none') renderCalDateTasks();
   };
 }
