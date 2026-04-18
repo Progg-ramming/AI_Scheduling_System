@@ -6,30 +6,30 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500&display=swap');
 
 :root {
-  --primary:      #667eea;
-  --primary-dim:  rgba(102,126,234,0.15);
-  --primary-glow: rgba(102,126,234,0.08);
-  --secondary:    #764ba2;
-  --gradient:     linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  --gradient-rev: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+  --primary:      #818cf8; /* Lightened primary blue for better contrast on dark bg */
+  --primary-dim:  rgba(129,140,248,0.15);
+  --primary-glow: rgba(129,140,248,0.08);
+  --secondary:    #a78bfa; /* Lightened secondary purple */
+  --gradient:     linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
+  --gradient-rev: linear-gradient(135deg, #a78bfa 0%, #818cf8 100%);
   --accent:       #38bdf8;
   --accent-dim:   rgba(56,189,248,0.12);
   --bg:           #0f172a;
   --bg2:          #0a0f1e;
-  --card:         rgba(30,41,59,0.7);
-  --card2:        rgba(38,51,72,0.7);
-  --card3:        rgba(45,61,88,0.8);
-  --border:       rgba(255,255,255,0.07);
-  --border2:      rgba(255,255,255,0.13);
-  --text:         #e2e8f0;
-  --text2:        #94a3b8;
-  --text3:        #475569;
+  --card:         rgba(30,41,59,0.85);
+  --card2:        rgba(38,51,72,0.85);
+  --card3:        rgba(45,61,88,0.9);
+  --border:       rgba(255,255,255,0.12);
+  --border2:      rgba(255,255,255,0.20);
+  --text:         #ffffff;
+  --text2:        #cbd5e1;
+  --text3:        #94a3b8;
   --green:        #4ade80;
-  --green-dim:    rgba(74,222,128,0.12);
+  --green-dim:    rgba(74,222,128,0.15);
   --red:          #f87171;
-  --red-dim:      rgba(248,113,113,0.12);
+  --red-dim:      rgba(248,113,113,0.15);
   --yellow:       #fbbf24;
-  --yellow-dim:   rgba(251,191,36,0.12);
+  --yellow-dim:   rgba(251,191,36,0.15);
   --r:            12px;
   --r-sm:         8px;
   --r-lg:         16px;
@@ -843,4 +843,219 @@ a:hover { color: var(--primary); }
 }
 .modal-box.video-report {
     max-width: 600px;
+}
+
+/* ── CATEGORY OPTIONS MENU ── */
+.cat-card { position: relative; }
+.cat-card-options {
+  position: absolute; top: .75rem; right: .75rem;
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text3); cursor: pointer; transition: all .2s;
+  z-index: 10;
+}
+.cat-card-options:hover { background: var(--primary-glow); color: var(--text); }
+
+.cat-dropdown {
+  position: absolute; top: 2.5rem; right: .75rem;
+  background: var(--card3); border: 1px solid var(--border2);
+  border-radius: var(--r-sm); width: 120px;
+  display: none; flex-direction: column;
+  box-shadow: var(--shadow-lg); z-index: 100;
+  overflow: hidden; backdrop-filter: blur(14px);
+}
+.cat-dropdown.show { display: flex; animation: dropdownIn .2s ease; }
+@keyframes dropdownIn {
+  from { opacity: 0; transform: translateY(-10px) scale(.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.cat-dropdown-item {
+  padding: .6rem 1rem; font-size: .8rem; color: var(--text2);
+  cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: .5rem;
+}
+.cat-dropdown-item:hover { background: var(--primary-glow); color: var(--text); }
+.cat-dropdown-item.danger:hover { background: var(--red-dim); color: var(--red); }
+
+/* ── ICON BUTTONS ── */
+.btn-icon {
+  width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--card2); color: var(--text2); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: all .2s;
+}
+.btn-icon:hover { border-color: var(--border2); color: var(--text); background: var(--card3); transform: translateY(-1px); }
+.btn-icon.success { color: var(--green); }
+.btn-icon.success:hover { background: var(--green-dim); border-color: var(--green); }
+.btn-icon.warning { color: var(--yellow); }
+.btn-icon.warning:hover { background: var(--yellow-dim); border-color: var(--yellow); }
+.btn-icon.danger { color: var(--red); }
+.btn-icon.danger:hover { background: var(--red-dim); border-color: var(--red); }
+
+/* ══════════════════════════════════════════════════
+   ── HIGHLIGHTED / USER-CENTRIC NAVIGATION STYLES ──
+   ══════════════════════════════════════════════════ */
+
+/* ── ACTION TABS (Add Task buttons inside tab bars) ── */
+.detect-tab.action {
+  background: linear-gradient(135deg, rgba(74,222,128,.15), rgba(34,197,94,.1));
+  color: var(--green);
+  border: 1px solid rgba(74,222,128,.3);
+  border-radius: 8px;
+  font-weight: 600;
+  position: relative;
+  overflow: hidden;
+}
+.detect-tab.action::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(74,222,128,.12), transparent);
+  transform: translateX(-100%);
+  transition: transform .5s ease;
+}
+.detect-tab.action:hover::before { transform: translateX(100%); }
+.detect-tab.action:hover {
+  background: linear-gradient(135deg, rgba(74,222,128,.25), rgba(34,197,94,.18));
+  border-color: var(--green);
+  color: #fff;
+  box-shadow: 0 0 14px rgba(74,222,128,.25);
+  transform: translateY(-1px);
+}
+.detect-tab.action i { color: inherit; }
+
+/* ── SIDEBAR ACTION ITEM (Add Task in nav) ── */
+.nav-item.action-item {
+  background: linear-gradient(135deg, rgba(74,222,128,.08), rgba(34,197,94,.05));
+  border-left-color: rgba(74,222,128,.4) !important;
+  color: var(--green) !important;
+  font-weight: 600;
+  position: relative;
+  margin: .2rem .75rem;
+  border-radius: var(--r-sm);
+  padding-left: 1rem;
+  border-left: 2.5px solid rgba(74,222,128,.5) !important;
+}
+.nav-item.action-item i { color: var(--green); }
+.nav-item.action-item:hover {
+  background: linear-gradient(135deg, rgba(74,222,128,.18), rgba(34,197,94,.12));
+  color: #fff !important;
+  box-shadow: 0 4px 16px rgba(74,222,128,.15);
+}
+/* Pulsing live dot on the Add Task nav entry */
+.nav-item.action-item::after {
+  content: '';
+  position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 0 rgba(74,222,128,.6);
+  animation: navPulse 2.2s ease-in-out infinite;
+}
+@keyframes navPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(74,222,128,.5); }
+  60%  { box-shadow: 0 0 0 6px rgba(74,222,128,0); }
+  100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+}
+
+/* ── TODAY'S FOCUS & VIEW ALL CHIPS (shimmer) ── */
+.today-focus-link {
+  position: relative; overflow: hidden;
+}
+.today-focus-link::after {
+  content: '';
+  position: absolute; top: 0; left: -60%;
+  width: 40%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(102,126,234,.18), transparent);
+  transform: skewX(-15deg);
+  animation: chipShimmer 3.5s ease-in-out infinite;
+}
+@keyframes chipShimmer {
+  0%,70%  { left: -60%; }
+  100%    { left: 120%; }
+}
+
+/* ── CALENDAR — stronger TODAY ring ── */
+.cal-day.today {
+  background: rgba(102,126,234,.1) !important;
+  box-shadow: inset 0 0 0 2px rgba(102,126,234,.45);
+}
+.cal-day.today .cal-day-num {
+  background: var(--gradient);
+  color: #fff;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 10px rgba(102,126,234,.5);
+  font-weight: 700;
+}
+
+/* ── CALENDAR — has-task dot indicator on date num ── */
+.cal-day.has-task .cal-day-num::after {
+  content: '';
+  display: inline-block;
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--primary);
+  margin-left: 3px; vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* ── STATUS DOT (used in Today Focus / View All tables) ── */
+.status-dot {
+  width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid var(--border2);
+  background: transparent;
+  cursor: pointer; transition: all .15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.status-dot:hover { border-color: var(--green); background: rgba(74,222,128,.1); }
+.status-dot.done {
+  background: var(--green); border-color: var(--green);
+}
+.status-dot.done::after {
+  content: '';
+  display: block; width: 4px; height: 7px;
+  border: 2px solid #fff; border-top: none; border-left: none;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+/* ── STATUS PILL (Pending / Completed badge in tables) ── */
+.status-pill {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .18rem .6rem; border-radius: 20px;
+  font-size: .7rem; font-weight: 600;
+}
+.status-pill.pending {
+  background: rgba(251,191,36,.12); color: var(--yellow);
+  border: 1px solid rgba(251,191,36,.25);
+}
+.status-pill.done {
+  background: rgba(74,222,128,.12); color: var(--green);
+  border: 1px solid rgba(74,222,128,.25);
+}
+
+/* ── PRIORITY PILL (used in Today Focus table) ── */
+.priority-pill {
+  display: inline-flex; padding: .18rem .6rem; border-radius: 20px;
+  font-size: .7rem; font-weight: 600; text-transform: capitalize;
+}
+.priority-pill.high   { background: var(--red-dim);    color: var(--red);    border: 1px solid rgba(248,113,113,.25); }
+.priority-pill.medium { background: var(--yellow-dim); color: var(--yellow); border: 1px solid rgba(251,191,36,.25); }
+.priority-pill.low    { background: var(--green-dim);  color: var(--green);  border: 1px solid rgba(74,222,128,.25); }
+
+/* ── CALENDAR DATE HERO — today special tint ── */
+.cal-date-hero.is-today {
+  background: linear-gradient(135deg, rgba(102,126,234,.18), rgba(118,75,162,.12));
+  border-color: rgba(102,126,234,.35);
+  box-shadow: 0 0 0 1px rgba(102,126,234,.2), 0 8px 32px rgba(102,126,234,.1);
+}
+.cal-date-hero.is-past {
+  background: linear-gradient(135deg, rgba(71,85,105,.15), rgba(51,65,85,.1));
+  border-color: rgba(255,255,255,.07);
+}
+
+/* ── ADD TASK PRIMARY BUTTON (in modals / header) ── */
+.btn.btn-sm:has(i.fa-plus) , .btn-sm.add-highlight {
+  box-shadow: 0 0 0 0 rgba(102,126,234,.4);
+  animation: btnGlow 3s ease-in-out infinite;
+}
+@keyframes btnGlow {
+  0%,100% { box-shadow: 0 2px 10px rgba(102,126,234,.2); }
+  50%     { box-shadow: 0 4px 20px rgba(102,126,234,.45); }
 }

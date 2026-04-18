@@ -110,6 +110,95 @@
 @media(max-width:540px){
   .insight-grid,.time-block-grid,.progress-kpi-row{grid-template-columns:1fr;}
 }
+/* ── CATEGORY GRID ── */
+.cat-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem; }
+.cat-card {
+  background:var(--card2);border:1px solid var(--border);border-radius:var(--r);
+  padding:1.25rem 1rem;text-align:center;cursor:pointer;
+  transition:all .2s;position:relative;overflow:hidden;
+}
+.cat-card:hover { transform:translateY(-4px);border-color:var(--border2);box-shadow:0 8px 24px rgba(0,0,0,.2); }
+.cat-card.active { border-color:var(--primary);background:var(--primary-dim); }
+.cat-card-icon { font-size:1.6rem;margin-bottom:.5rem;display:block; }
+.cat-card-label { font-size:.8rem;font-weight:600;color:var(--text2); }
+.cat-card-count {
+  position:absolute;top:.5rem;right:.5rem;
+  background:var(--primary-dim);color:var(--primary);
+  border-radius:10px;padding:.1rem .4rem;font-size:.65rem;font-weight:700;
+}
+.cat-view-header {
+  display:flex;align-items:center;gap:.75rem;margin-bottom:1.25rem;flex-wrap:wrap;
+}
+.cat-breadcrumb {
+  display:inline-flex;align-items:center;gap:.5rem;
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.5);
+  border-radius: 30px;
+  padding: .45rem 1.1rem;
+  font-size: .82rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em;
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  cursor: pointer;
+  transition: all .25s ease;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2), inset 0 0 10px rgba(255,255,255,0.05);
+}
+.cat-breadcrumb i { font-size: .95rem; color: var(--accent); transition: transform .2s ease; }
+.cat-breadcrumb:hover { 
+  background: rgba(255,255,255,0.2);
+  border-color: #fff;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.3), 0 0 15px rgba(255,255,255,0.2);
+  transform: translateX(-4px);
+}
+.cat-breadcrumb:hover i { transform: translateX(-3px); }
+#newCatInput {
+  background:var(--card2);border:1px solid var(--border2);border-radius:var(--r-sm);
+  padding:.55rem .85rem;color:var(--text);font-family:'Plus Jakarta Sans',sans-serif;
+  font-size:.88rem;outline:none;transition:border-color .15s;flex:1;
+}
+#newCatInput:focus { border-color:var(--primary); }
+@media(max-width:900px){.cat-grid{grid-template-columns:repeat(3,1fr);}}
+@media(max-width:540px){.cat-grid{grid-template-columns:repeat(2,1fr);}}
+
+  .today-focus-link { 
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size:.82rem; font-weight: 700; color:#fff; cursor:pointer; 
+    padding:.5rem 1.1rem; border-radius:30px; transition:all .3s ease; 
+    background: linear-gradient(135deg, rgba(129,140,248,0.25), rgba(167,139,250,0.2)); 
+    border: 1px solid rgba(129,140,248,0.45);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15), inset 0 0 10px rgba(129,140,248,0.1);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .today-focus-link:hover { 
+    background: linear-gradient(135deg, rgba(129,140,248,0.4), rgba(167,139,250,0.3)); 
+    border-color: rgba(129,140,248,0.8); 
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(129,140,248,0.3), 0 0 15px rgba(129,140,248,0.15);
+    color: #fff;
+  }
+  .today-focus-link i { margin-right:.5rem; font-size: .95rem; color: var(--accent); }
+
+  /* ── CALENDAR DATE VIEW ── */
+  .cal-date-hero {
+    display:flex;align-items:center;gap:1rem;padding:1.25rem 1.5rem;
+    background:linear-gradient(135deg,var(--primary-dim),rgba(118,75,162,.08));
+    border:1px solid rgba(102,126,234,.2);border-radius:var(--r);margin-bottom:1.5rem;
+  }
+  .cal-date-hero-icon {
+    width:52px;height:52px;border-radius:14px;
+    background:var(--primary-dim);border:1px solid rgba(102,126,234,.3);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .cal-date-hero-day { font-size:1.3rem;font-weight:700;color:var(--primary);line-height:1; }
+  .cal-date-hero-mon { font-size:.55rem;text-transform:uppercase;letter-spacing:.08em;color:var(--primary);opacity:.8; }
+  .cal-date-hero-label { flex:1; }
+  .cal-date-hero-label h3 { font-family:'Playfair Display',serif;font-size:1.15rem;font-weight:400;margin-bottom:.2rem; }
+  .cal-date-hero-label p  { font-size:.8rem;color:var(--text3); }
+  .cal-date-task-count {
+    background:var(--primary-dim);color:var(--primary);
+    border:1px solid rgba(102,126,234,.25);border-radius:20px;
+    padding:.3rem .85rem;font-size:.8rem;font-weight:600;
+  }
 </style>
 </head>
 <body class="dashboard-page">
@@ -126,8 +215,8 @@
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Tasks</div>
-      <div class="nav-item" onclick="showPanel('schedule')"><i class="fas fa-list-check"></i>View Schedule</div>
-      <div class="nav-item" onclick="openAddModal()"><i class="fas fa-plus-circle"></i>Add Task</div>
+      <div class="nav-item" onclick="showPanel('schedule')"><i class="fas fa-list-check"></i>Task View</div>
+      <div class="nav-item action-item" onclick="openAddModal()"><i class="fas fa-plus-circle"></i>Add Task</div>
       <div class="nav-item" onclick="showPanel('calendar')"><i class="fas fa-calendar-alt"></i>Calendar</div>
     </div>
     <div class="nav-section">
@@ -256,39 +345,142 @@
 
     <!-- ═══ SCHEDULE ═══ -->
     <div class="panel" id="panel-schedule">
-      <div class="card">
+
+      <!-- Category grid (default view) -->
+      <div id="catGridView">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;">
-          <div>
-            <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;"><i class="fas fa-list-check" style="color:var(--primary);margin-right:.5rem;"></i>Full Schedule</h2>
-            <div id="scheduleStressInfo" style="font-size:.75rem;color:var(--text3);margin-top:.2rem;"></div>
+          <div style="display:flex;align-items:center;gap:1.5rem;">
+            <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;"><i class="fas fa-list-check" style="color:var(--primary);margin-right:.5rem;"></i>Schedule by Category</h2>
+            <span class="today-focus-link" onclick="openTodayFocus()"><i class="fas fa-bullseye"></i> Today's Focus</span>
+            <span class="today-focus-link" onclick="openViewAllTasks()"><i class="fas fa-layer-group"></i> View All Tasks</span>
           </div>
           <button class="btn btn-sm" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Task</button>
         </div>
-        <div style="overflow-x:auto;">
-          <table class="schedule-table">
-            <thead><tr><th>Task</th><th>Deadline</th><th>Priority</th><th>Status</th><th style="text-align:center;">Actions</th></tr></thead>
-            <tbody id="scheduleBody"><tr><td colspan="5" style="text-align:center;color:var(--text3);padding:2rem;">Loading...</td></tr></tbody>
-          </table>
+        <div class="cat-grid" id="categoryGrid"></div>
+      </div>
+
+      <!-- Today's Focus Immersion View -->
+      <div id="todayFocusView" style="display:none;">
+        <div class="cat-view-header">
+          <span class="cat-breadcrumb" onclick="closeTodayFocus()"><i class="fas fa-chevron-left"></i> All Categories</span>
+          <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;flex:1;"><i class="fas fa-bullseye" style="color:var(--primary);margin-right:.5rem;"></i>Today's Focus</h2>
+          <div id="todayStressInfo" style="font-size:.75rem;color:var(--text3);"></div>
+        </div>
+        
+        <div style="display:flex;gap:.5rem;margin-bottom:1.25rem;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:.3rem;width:fit-content;">
+          <button class="detect-tab active" id="tf-todo" onclick="switchTodaySubTab('todo',this)"><i class="fas fa-list-ul"></i> To-do</button>
+          <button class="detect-tab" id="tf-completed" onclick="switchTodaySubTab('completed',this)"><i class="fas fa-circle-check"></i> Completed</button>
+          <button class="detect-tab action" onclick="openAddModalToday()"><i class="fas fa-plus-circle"></i> Add Task</button>
+        </div>
+
+        <div class="card">
+          <div style="overflow-x:auto;">
+            <table class="schedule-table">
+              <thead><tr><th>Task</th><th>Category</th><th>Priority</th><th>Status</th><th style="text-align:center;">Actions</th></tr></thead>
+              <tbody id="todayFocusBody"><tr><td colspan="5" style="text-align:center;color:var(--text3);padding:2rem;">No tasks for today.</td></tr></tbody>
+            </table>
+          </div>
         </div>
       </div>
+
+      <!-- View All Tasks Immersion View -->
+      <div id="viewAllTasksView" style="display:none;">
+        <div class="cat-view-header">
+          <span class="cat-breadcrumb" onclick="closeViewAllTasks()"><i class="fas fa-chevron-left"></i> All Categories</span>
+          <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;flex:1;"><i class="fas fa-layer-group" style="color:var(--primary);margin-right:.5rem;"></i>All Tasks</h2>
+        </div>
+
+        <div style="display:flex;gap:.5rem;margin-bottom:1.25rem;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:.3rem;width:fit-content;">
+          <button class="detect-tab active" id="va-todo" onclick="switchViewAllSubTab('todo',this)"><i class="fas fa-list-ul"></i> To-do</button>
+          <button class="detect-tab" id="va-completed" onclick="switchViewAllSubTab('completed',this)"><i class="fas fa-circle-check"></i> Completed</button>
+          <button class="detect-tab action" onclick="openAddModal()"><i class="fas fa-plus-circle"></i> Add Task</button>
+        </div>
+
+        <div class="card">
+          <div style="overflow-x:auto;">
+            <table class="schedule-table">
+              <thead><tr><th>Task</th><th>Deadline</th><th>Category</th><th>Priority</th><th>Status</th><th style="text-align:center;">Actions</th></tr></thead>
+              <tbody id="viewAllBody"><tr><td colspan="6" style="text-align:center;color:var(--text3);padding:2rem;">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Category detail view -->
+      <div id="catDetailView" style="display:none;">
+        <div class="cat-view-header">
+          <span class="cat-breadcrumb" onclick="showCategoryGrid()"><i class="fas fa-chevron-left"></i> All Categories</span>
+          <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;flex:1;" id="catDetailTitle"></h2>
+          <button class="btn btn-sm" id="catDetailBtn" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Task</button>
+          <div id="scheduleStressInfo" style="font-size:.75rem;color:var(--text3);"></div>
+        </div>
+        <div class="card">
+          <div style="overflow-x:auto;">
+            <table class="schedule-table">
+              <thead><tr><th>Task</th><th>Deadline</th><th>Priority</th><th>Status</th><th style="text-align:center;">Actions</th></tr></thead>
+              <tbody id="scheduleBody"><tr><td colspan="5" style="text-align:center;color:var(--text3);padding:2rem;">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ═══ CALENDAR ═══ -->
     <div class="panel" id="panel-calendar">
-      <div class="cal-wrap">
-        <div class="cal-nav" style="justify-content:space-between;">
-          <input type="month" id="calMonthPicker" style="background:var(--card2);color:var(--text);font-size:1rem;font-family:'Playfair Display',serif;font-weight:600;border:1px solid var(--border);padding:0.3rem 0.5rem;border-radius:var(--r-sm);outline:none;cursor:pointer;" onchange="handleMonthPicker(this.value)">
-          <div style="display:flex;gap:0.5rem;">
-            <button class="cal-nav-btn" id="calPrev"><i class="fas fa-chevron-left"></i></button>
-            <button class="cal-nav-btn" id="calNext"><i class="fas fa-chevron-right"></i></button>
+
+      <!-- Calendar Grid View (default) -->
+      <div id="calGridView">
+        <div class="cal-wrap">
+          <div class="cal-nav" style="justify-content:space-between;">
+            <input type="month" id="calMonthPicker" style="background:var(--card2);color:var(--text);font-size:1rem;font-family:'Playfair Display',serif;font-weight:600;border:1px solid var(--border);padding:0.3rem 0.5rem;border-radius:var(--r-sm);outline:none;cursor:pointer;" onchange="handleMonthPicker(this.value)">
+            <div style="display:flex;gap:0.5rem;">
+              <button class="cal-nav-btn" id="calPrev"><i class="fas fa-chevron-left"></i></button>
+              <button class="cal-nav-btn" id="calNext"><i class="fas fa-chevron-right"></i></button>
+            </div>
           </div>
-        </div>
-        <div class="cal-grid" id="calGrid"></div>
-        <p style="font-size:.8rem;color:var(--primary);margin-top:1rem;min-height:1.2rem;" id="calSelected"></p>
-        <div style="display:flex;justify-content:flex-end;margin-top:1rem;">
-          <button class="btn btn-sm" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Task</button>
+          <div class="cal-grid" id="calGrid"></div>
+          <p style="font-size:.8rem;color:var(--text3);margin-top:.75rem;min-height:1.2rem;" id="calSelected">Click any date to view or add tasks</p>
         </div>
       </div>
+
+      <!-- Calendar Date Detail View -->
+      <div id="calDateView" style="display:none;">
+        <div class="cat-view-header">
+          <span class="cat-breadcrumb" onclick="closeCalendarDateView()"><i class="fas fa-chevron-left"></i> Calendar</span>
+          <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;flex:1;" id="calDateViewTitle"><i class="fas fa-calendar-day" style="color:var(--primary);margin-right:.5rem;"></i>Date Tasks</h2>
+        </div>
+
+        <!-- Date hero card -->
+        <div class="cal-date-hero">
+          <div class="cal-date-hero-icon">
+            <div class="cal-date-hero-day" id="calDateHeroDay"></div>
+            <div class="cal-date-hero-mon" id="calDateHeroMon"></div>
+          </div>
+          <div class="cal-date-hero-label">
+            <h3 id="calDateHeroFull"></h3>
+            <p id="calDateHeroSub"></p>
+          </div>
+          <div class="cal-date-task-count" id="calDateTaskCount">0 tasks</div>
+        </div>
+
+        <!-- Sub-tab bar -->
+        <div style="display:flex;gap:.5rem;margin-bottom:1.25rem;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:.3rem;width:fit-content;">
+          <button class="detect-tab active" id="cd-todo" onclick="switchCalDateTab('todo',this)"><i class="fas fa-list-ul"></i> To-do</button>
+          <button class="detect-tab" id="cd-completed" onclick="switchCalDateTab('completed',this)"><i class="fas fa-circle-check"></i> Completed</button>
+          <button class="detect-tab action" onclick="openAddModalForDate()"><i class="fas fa-plus-circle"></i> Add Task</button>
+        </div>
+
+        <div class="card">
+          <div style="overflow-x:auto;">
+            <table class="schedule-table">
+              <thead><tr><th>Task</th><th>Category</th><th>Priority</th><th>Status</th><th style="text-align:center;">Actions</th></tr></thead>
+              <tbody id="calDateBody"><tr><td colspan="5" style="text-align:center;color:var(--text3);padding:2rem;">No tasks for this date.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ═══ ANALYTICS ═══ -->
@@ -449,7 +641,7 @@
     <h3><i class="fas fa-plus-circle"></i><span id="modalTitle">Add New Task</span></h3>
     <input type="hidden" id="editTaskId"/>
     <div class="input-group"><label>Task Title</label><input type="text" id="taskTitle" placeholder="e.g. Review project report"/></div>
-    <div class="input-group"><label>Deadline</label><input type="date" id="taskDeadline"/></div>
+    <div class="input-group"><label>Deadline (today or future)</label><input type="date" id="taskDeadline"/></div>
     <div class="input-group"><label>Priority</label>
       <select id="taskPriority">
         <option value="low">🟢 Low</option>
@@ -458,6 +650,34 @@
       </select>
     </div>
     <div class="input-group"><label>Notes (optional)</label><textarea id="taskNotes" rows="2" placeholder="Extra details..."></textarea></div>
+    <div class="input-group">
+      <label>Category</label>
+      <select id="taskCategory" onchange="handleCategorySelect(this)">
+        <option value="habit">🚭 Quitting Bad Habit</option>
+        <option value="art">🎨 Art</option>
+        <option value="self-love">💖 Self Love</option>
+        <option value="meditation">🧘 Meditation</option>
+        <option value="study">📚 Study</option>
+        <option value="sports">⚽ Sports</option>
+        <option value="entertainment">🎮 Entertainment</option>
+        <option value="social">👥 Social</option>
+        <option value="finance">💰 Finance</option>
+        <option value="spirituality">✨ Spirituality</option>
+        <option value="health">❤️ Health</option>
+        <option value="work">💼 Work</option>
+        <option value="nutrition">🥗 Nutrition</option>
+        <option value="home">🏠 Home</option>
+        <option value="outdoor">🌿 Outdoor</option>
+        <option value="other" selected>➕ Other</option>
+      </select>
+    </div>
+    <div class="input-group" id="customCatGroup" style="display:none;">
+      <label>New Category Name</label>
+      <div style="display:flex;gap:.5rem;">
+        <input type="text" id="newCatInput" placeholder="e.g. Photography, Cooking..."/>
+        <button class="btn btn-sm" onclick="addCustomCategory()" type="button"><i class="fas fa-plus"></i></button>
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="btn-modal-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-modal-primary" onclick="submitTask()"><i class="fas fa-check"></i> Save Task</button>
@@ -473,6 +693,51 @@
     <video id="reportVideoPlayer" controls autoplay style="width:100%;border-radius:var(--r-sm);margin-top:.75rem;"></video>
     <div class="modal-actions">
       <button class="btn-modal-cancel" onclick="closeVideoModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- RENAME CATEGORY MODAL -->
+<div class="modal-overlay" id="renameCatModal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeRenameModal()"><i class="fas fa-times"></i></button>
+    <h3><i class="fas fa-pen"></i> Rename Category</h3>
+    <input type="hidden" id="renameCatId"/>
+    <div class="input-group">
+      <label>New Name</label>
+      <input type="text" id="renameCatInput" placeholder="Enter new name..."/>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeRenameModal()">Cancel</button>
+      <button class="btn-modal-primary" onclick="confirmRenameCategory()"><i class="fas fa-check"></i> Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE CATEGORY MODAL -->
+<div class="modal-overlay" id="deleteCatModal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeDeleteModal()"><i class="fas fa-times"></i></button>
+    <h3><i class="fas fa-trash-can"></i> Delete Category</h3>
+    <input type="hidden" id="deleteCatId"/>
+    <p style="margin-bottom:1.5rem;color:var(--text2);font-size:.9rem;">Are you sure you want to delete this category? All tasks will be moved to the <b>'Other'</b> category to ensure no data is lost.</p>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn-modal-primary btn-danger" onclick="confirmDeleteCategory()" style="background:linear-gradient(135deg, #ef4444, #dc2626);"><i class="fas fa-trash"></i> Delete Category</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE TASK MODAL -->
+<div class="modal-overlay" id="deleteTaskModal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeDeleteTaskModal()"><i class="fas fa-times"></i></button>
+    <h3><i class="fas fa-trash-can"></i> Delete Task</h3>
+    <input type="hidden" id="deleteTaskId"/>
+    <p style="margin-bottom:1.5rem;color:var(--text2);font-size:.9rem;">Are you sure you want to delete this task? This action cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeDeleteTaskModal()">Cancel</button>
+      <button class="btn-modal-primary btn-danger" onclick="confirmDeleteTask()" style="background:linear-gradient(135deg, #ef4444, #dc2626);"><i class="fas fa-trash"></i> Delete Task</button>
     </div>
   </div>
 </div>

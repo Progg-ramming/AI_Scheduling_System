@@ -31,3 +31,6 @@ upload/*
 *.wav
 *.webm
 tmp_voice_raw*
+
+# test files
+test.js

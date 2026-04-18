@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     deadline TIMESTAMP,
     priority VARCHAR(50) DEFAULT 'medium',
     status VARCHAR(50) DEFAULT 'pending',
+    category TEXT DEFAULT 'other',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -53,7 +54,28 @@ CREATE TABLE IF NOT EXISTS tasks_logs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ══════════════════════════════════════════════════════════════════════════
+-- 5. CATEGORIES TABLE
+CREATE TABLE IF NOT EXISTS categories (
+    id SERIAL PRIMARY KEY,
+    user_email TEXT NOT NULL,
+    cat_id VARCHAR(100) NOT NULL, -- The unique identifier like 'habit', 'work'
+    label VARCHAR(100) NOT NULL,
+    icon TEXT,
+    color TEXT,
+    border TEXT,
+    original_cat_id TEXT, -- Tracks if this replaced a default category
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- For recency sorting
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_email, cat_id)
+);
+
+-- 1. Tracking for renamed defaults
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS original_cat_id TEXT;
+
+-- 2. Recency sorting (Move to Top feature)
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+
 -- Migrations / Fixes for existing databases:
 -- ══════════════════════════════════════════════════════════════════════════
 
@@ -70,5 +92,13 @@ DO $$
 BEGIN 
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tasks' AND column_name='updated_at') THEN
         ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+    END IF;
+END $$;
+
+-- Ensure category exists in tasks
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tasks' AND column_name='category') THEN
+        ALTER TABLE tasks ADD COLUMN category TEXT DEFAULT 'other';
     END IF;
 END $$;
