@@ -130,12 +130,19 @@
   display:flex;align-items:center;gap:.75rem;margin-bottom:1.25rem;flex-wrap:wrap;
 }
 .cat-breadcrumb {
-  display:inline-flex;align-items:center;gap:.4rem;
-  background:var(--primary-dim);color:var(--primary);
-  border:1px solid rgba(102,126,234,.25);border-radius:20px;
-  padding:.3rem .85rem;font-size:.78rem;font-weight:600;cursor:pointer;
+  display:inline-flex;align-items:center;gap:.45rem;
+  background:var(--card2);color:var(--text2);
+  border:1px solid var(--border);border-radius:20px;
+  padding:.35rem .95rem;font-size:.8rem;font-weight:500;cursor:pointer;
+  transition:all .2s ease;box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
-.cat-breadcrumb:hover { background:rgba(102,126,234,.25); }
+.cat-breadcrumb i { font-size:.75rem; transition:transform .2s; }
+.cat-breadcrumb:hover { 
+  background:var(--card3);color:var(--text);
+  border-color:var(--border2);
+  transform: translateX(-3px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
 #newCatInput {
   background:var(--card2);border:1px solid var(--border2);border-radius:var(--r-sm);
   padding:.55rem .85rem;color:var(--text);font-family:'Plus Jakarta Sans',sans-serif;

@@ -6,30 +6,30 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500&display=swap');
 
 :root {
-  --primary:      #667eea;
-  --primary-dim:  rgba(102,126,234,0.15);
-  --primary-glow: rgba(102,126,234,0.08);
-  --secondary:    #764ba2;
-  --gradient:     linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  --gradient-rev: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+  --primary:      #818cf8; /* Lightened primary blue for better contrast on dark bg */
+  --primary-dim:  rgba(129,140,248,0.15);
+  --primary-glow: rgba(129,140,248,0.08);
+  --secondary:    #a78bfa; /* Lightened secondary purple */
+  --gradient:     linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
+  --gradient-rev: linear-gradient(135deg, #a78bfa 0%, #818cf8 100%);
   --accent:       #38bdf8;
   --accent-dim:   rgba(56,189,248,0.12);
   --bg:           #0f172a;
   --bg2:          #0a0f1e;
-  --card:         rgba(30,41,59,0.7);
-  --card2:        rgba(38,51,72,0.7);
-  --card3:        rgba(45,61,88,0.8);
-  --border:       rgba(255,255,255,0.07);
-  --border2:      rgba(255,255,255,0.13);
-  --text:         #e2e8f0;
-  --text2:        #94a3b8;
-  --text3:        #475569;
+  --card:         rgba(30,41,59,0.85);
+  --card2:        rgba(38,51,72,0.85);
+  --card3:        rgba(45,61,88,0.9);
+  --border:       rgba(255,255,255,0.12);
+  --border2:      rgba(255,255,255,0.20);
+  --text:         #ffffff;
+  --text2:        #cbd5e1;
+  --text3:        #94a3b8;
   --green:        #4ade80;
-  --green-dim:    rgba(74,222,128,0.12);
+  --green-dim:    rgba(74,222,128,0.15);
   --red:          #f87171;
-  --red-dim:      rgba(248,113,113,0.12);
+  --red-dim:      rgba(248,113,113,0.15);
   --yellow:       #fbbf24;
-  --yellow-dim:   rgba(251,191,36,0.12);
+  --yellow-dim:   rgba(251,191,36,0.15);
   --r:            12px;
   --r-sm:         8px;
   --r-lg:         16px;
