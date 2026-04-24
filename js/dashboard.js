@@ -306,8 +306,11 @@ async function captureCombined() {
       if (blob) fd.append('frame', blob, 'frame.jpg');
     }
 
-    const res = await fetch(`${API}/detect-combined`, { method: 'POST', body: fd });
-    const data = await res.json();
+
+    const res = await fetch(`${API}/detect-combined`, {method: 'POST', body: fd });
+if (!res.ok) throw new Error('Server error');
+const data = await res.json();
+
     const combined = data.combined_stress ?? 40;
     currentStressLevel = combined;
     const faceTag = data.face_emotion || 'Neutral';
@@ -961,6 +964,7 @@ async function submitTask() {
 }
 window.submitTask = submitTask;
 
+       
 // ── CALENDAR ──────────────────────────────────────────
 let calY, calM;
 const taskedDates = new Set();
