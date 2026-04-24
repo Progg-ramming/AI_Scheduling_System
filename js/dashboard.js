@@ -189,7 +189,7 @@ async function captureCombined() {
       if (blob) fd.append('frame', blob, 'frame.jpg');
     }
 
-    const res = await fetch(`${API}/analyze`, {method: 'POST', body: fd });
+    const res = await fetch(`${API}/detect-combined`, {method: 'POST', body: fd });
 if (!res.ok) throw new Error('Server error');
 const data = await res.json();
     const combined = data.combined_stress ?? 40;
