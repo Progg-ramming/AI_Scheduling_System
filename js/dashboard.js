@@ -29,16 +29,16 @@ function showPanel(name) {
   const fab = document.querySelector('.fab');
   if (fab) fab.style.display = name === 'schedule' ? 'none' : 'flex';
 
+  // Auto-refresh tasks from server on every panel switch
+  loadTasks();
+
   if (name === 'calendar') {
-    // Always go back to the grid view when navigating via sidebar
     if (document.getElementById('calDateView')?.style.display !== 'none') {
       document.getElementById('calDateView').style.display = 'none';
       document.getElementById('calGridView').style.display = 'block';
       calDateViewDate = null;
     }
-    renderCalendar();
   }
-  if (name === 'schedule')  { if (currentCategory) { renderScheduleTable(lastAiOrder); } else { renderCategoryGrid(); } }
   if (name === 'analytics') { loadBehaviorInsights(); updateSmartScheduling(); }
   if (name === 'history')   loadRecentActivity();
 }
@@ -282,16 +282,10 @@ async function captureCombined() {
   document.querySelectorAll('.voice-bar').forEach(b => b.style.height = '8px');
 
   try {
-    // Upload video
-    if (combinedVideoBlob) {
-      const vFd = new FormData();
-      vFd.append('video', combinedVideoBlob, 'stress_report.webm');
-      try {
-        const vRes = await fetch(`${API}/upload-video`, { method: 'POST', body: vFd });
-        const vData = await vRes.json();
-        lastVideoUrl = vData.videoUrl;
-      } catch {}
-    }
+  if (combinedMediaRecorder && combinedMediaRecorder.state !== 'inactive') {
+    combinedMediaRecorder.stop();
+    await new Promise(r => setTimeout(r, 600));
+  }
 
     // AI detection
     const fd = new FormData();
@@ -317,7 +311,7 @@ async function captureCombined() {
       <span style="color:var(--primary)">👤 Face: <b>${faceTag}</b> (${data.face_stress ?? '?'}/100)</span> &nbsp;|
       <span style="color:var(--accent)">🎤 Voice: <b>${voiceTag}</b> (${data.voice_stress ?? '?'}/100)</span><br>
       <span style="color:var(--green);font-weight:700;font-size:1.05rem;">→ Combined Stress: ${combined}/100 — ${STRESS_LABELS[Math.min(combined,100)] || ''}</span>
-      ${lastVideoUrl ? '<br><small style="color:var(--green)">✓ Video report stored</small>' : ''}
+      ${combinedVideoBlob ? '<br><small style="color:var(--green)">✓ Video report captured (will be saved with your log)</small>' : ''}
     `;
     updateStressBadge(combined);
     updateStressStats(combined);
@@ -378,20 +372,25 @@ async function analyzeStress() {
   updateStressBadge(currentStressLevel);
   updateStressStats(currentStressLevel);
 
-  // Log stress
+  // Log stress (including video if captured)
   try {
+    const fd = new FormData();
+    fd.append('email', email);
+    fd.append('stressLevel', currentStressLevel);
+    fd.append('source', detectionSource);
+    if (lastFaceEmotion) fd.append('faceEmotion', lastFaceEmotion);
+    if (lastVoiceEmotion) fd.append('voiceEmotion', lastVoiceEmotion);
+    if (note) fd.append('note', note);
+    if (combinedVideoBlob) fd.append('video', combinedVideoBlob, 'report.webm');
+
     await fetch(`${API}/log-stress`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email, stressLevel: currentStressLevel,
-        source: detectionSource,
-        faceEmotion: lastFaceEmotion,
-        voiceEmotion: lastVoiceEmotion,
-        note, videoUrl: lastVideoUrl
-      })
+      method: 'POST',
+      body: fd // Browser sets Content-Type to multipart/form-data with boundary
     });
     loadRecentActivity();
-  } catch {}
+  } catch (err) {
+    console.error('Failed to log stress to DB:', err);
+  }
 
   // Update smart scheduling after new scan
   updateSmartScheduling();
@@ -436,20 +435,19 @@ async function loadTasks() {
     const serverTasks = data.tasks || data || [];
     console.log(`[Persistence] Loaded ${serverTasks.length} tasks from server`);
     
-    tasks = serverTasks.map(t => {
-      if (!t.category) console.warn(`[Persistence] Task ${t.id} ("${t.title}") has NO category. Defaulting to 'other'.`);
-      return {
-        ...t,
-        category: t.category || 'other',
-        done: t.status === 'done',
-        deadline: toLocalYYYYMMDD(t.deadline)
-      };
-    });
+    tasks = serverTasks.map(t => mapTask(t));
   } catch (err) { console.error('[Persistence] Error loading tasks:', err); }
-  renderTasks();
-  renderScheduleTable();
-  renderCalendar();
+  refreshUI();
   if (document.getElementById('todayFocusView')?.style.display !== 'none') renderTodayFocusTasks();
+}
+
+function refreshUI() {
+  renderTasks(lastAiOrder);
+  renderScheduleTable(lastAiOrder);
+  renderCalendar();
+  if (document.getElementById('panel-analytics').classList.contains('active')) {
+    renderChart();
+  }
 }
 
 function renderTasks(orderedIds) {
@@ -508,6 +506,7 @@ function updateTaskStats() {
 async function toggleTask(id) {
   const t = tasks.find(t => t.id == id); if (!t) return;
   t.done = !t.done;
+  t.updated_at = new Date().toISOString();
   const email = user?.email || localStorage.getItem('email') || '';
   try {
     await fetch(`${API}/update-task`, {
@@ -515,7 +514,7 @@ async function toggleTask(id) {
       body: JSON.stringify({ taskId: id, title: t.title, deadline: t.deadline, priority: t.priority, status: t.done ? 'done' : 'pending', user_email: email })
     });
   } catch {}
-  renderTasks(lastAiOrder); renderScheduleTable(lastAiOrder); renderCalendar();
+  refreshUI();
 }
 window.toggleTask = toggleTask;
 
@@ -548,7 +547,7 @@ async function confirmDeleteTask() {
     deferredIds = deferredIds.filter(did => String(did) !== String(id));
     showToast('Task deleted');
     closeDeleteTaskModal();
-    renderTasks(lastAiOrder); renderScheduleTable(lastAiOrder); renderCalendar();
+    refreshUI();
     renderCategoryGrid();
   } catch { showToast('Error deleting task'); }
 }
@@ -717,6 +716,8 @@ async function confirmDeleteCategory() {
     // Refresh local categories
     const r = await fetch(`${API}/get-categories?email=${encodeURIComponent(email)}`);
     customCategories = (await r.json()).categories || [];
+    
+
 
     showToast('Category deleted ✓');
     closeDeleteModal();
@@ -920,11 +921,15 @@ async function submitTask() {
       });
       const t = tasks.find(t => t.id == editId);
       if (t) {
-        t.title = title;
-        t.deadline = deadline;
-        t.priority = priority;
-        t.category = category;
-        t.notes = document.getElementById('taskNotes').value;
+        Object.assign(t, mapTask({
+          ...t,
+          title,
+          deadline,
+          priority,
+          category,
+          notes: document.getElementById('taskNotes').value,
+          updated_at: new Date().toISOString()
+        }));
       }
       showToast('Task updated ✓');
     } catch { showToast('Error updating task'); }
@@ -937,25 +942,17 @@ async function submitTask() {
       });
       const data = await res.json();
       if (data.success) {
-        const notes = document.getElementById('taskNotes').value;
-        const newTask = {
-          id: data.id || Date.now(),
-          title,
-          deadline,
-          priority,
-          done: false,
-          category,
-          notes,
-          status: 'pending',
-          created_at: new Date().toISOString()
-        };
+        const newTask = mapTask({
+          ...data.task,
+          notes: document.getElementById('taskNotes').value
+        });
         tasks.push(newTask);
         showToast('Task added ✓');
       } else { showToast(data.error || 'Error adding task'); }
     } catch { showToast('Server error'); }
   }
   closeModal();
-  renderTasks(lastAiOrder); renderScheduleTable(lastAiOrder); renderCalendar();
+  refreshUI();
   if (document.getElementById('catGridView')?.style.display !== 'none') renderCategoryGrid();
   if (document.getElementById('calDateView')?.style.display !== 'none') renderCalDateTasks();
 }
@@ -1540,145 +1537,254 @@ updateSmartScheduling();
 // ── CHART.JS PROGRESS TRACKING ────────────────────────
 let barChartInstance = null;
 let donutChartInstance = null;
-let polarChartInstance = null;
+let radarChartInstance = null;
 
 async function renderChart() {
-  if (barChartInstance)   { barChartInstance.destroy();   barChartInstance = null; }
-  if (donutChartInstance) { donutChartInstance.destroy(); donutChartInstance = null; }
-  if (polarChartInstance) { polarChartInstance.destroy(); polarChartInstance = null; }
-
-  const scale = document.getElementById('chartTimeScale')?.value || 'week';
-  const days  = scale === 'week' ? 7 : 30;
-  const today = new Date();
-  const email = user?.email || localStorage.getItem('email') || '';
-
-  let stressLogs = [];
   try {
-    const r = await fetch(`${API}/stress-logs?email=${encodeURIComponent(email)}&days=${days}`);
-    const d = await r.json();
-    stressLogs = d.logs || [];
-  } catch {}
+    if (barChartInstance)   { barChartInstance.destroy();   barChartInstance = null; }
+    if (donutChartInstance) { donutChartInstance.destroy(); donutChartInstance = null; }
+    if (radarChartInstance) { radarChartInstance.destroy(); radarChartInstance = null; }
+    
+    // Freeze today BEFORE any date mutations below
+    // Freeze today BEFORE any date mutations below
+    const scale = document.getElementById('chartTimeScale')?.value || 'this-week';
+    const today = new Date();
+    const email = user?.email || localStorage.getItem('email') || '';
 
-  const labels = [], completedData = [], stressData = [];
-  let totalDone = 0, totalPending = 0, highP = 0, medP = 0, lowP = 0;
-  let bestStress = 100, streakDays = 0, lastActive = false;
+    let days = 7;
+    let startOfPeriod;
 
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    labels.push(d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }));
-
-    const dayTasks    = tasks.filter(t => t.deadline && t.deadline.split('T')[0] === ds);
-    const dayDone     = dayTasks.filter(t => t.done).length;
-    totalDone    += dayDone;
-    totalPending += dayTasks.filter(t => !t.done).length;
-    dayTasks.forEach(t => { if(t.priority==='high') highP++; else if(t.priority==='low') lowP++; else medP++; });
-    completedData.push(dayDone);
-
-    const dayLogs = stressLogs.filter(l => {
-      const ld = new Date(l.logged_at);
-      return `${ld.getFullYear()}-${String(ld.getMonth()+1).padStart(2,'0')}-${String(ld.getDate()).padStart(2,'0')}` === ds;
-    });
-    if (dayLogs.length > 0) {
-      const avg = dayLogs.reduce((s,l) => s + l.stress_level, 0) / dayLogs.length;
-      stressData.push(parseFloat(avg.toFixed(1)));
-      if (avg < bestStress) bestStress = Math.round(avg);
-      if (i <= 6) { if (dayLogs.length > 0) { if (lastActive || i === 6) streakDays++; lastActive = true; } else lastActive = false; }
-    } else {
-      stressData.push(null);
+    if (scale === 'this-week') {
+      // Monday of current week to today
+      const dayOfWeek = today.getDay();
+      const daysFromMon = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      startOfPeriod = new Date(today);
+      startOfPeriod.setDate(today.getDate() - daysFromMon);
+      startOfPeriod.setHours(0, 0, 0, 0);
+      days = daysFromMon + 1;
+    } else if (scale === 'past-week') {
+      // Previous calendar week: Mon to Sun of last week
+      const dayOfWeek = today.getDay();
+      const daysFromMon = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      startOfPeriod = new Date(today);
+      startOfPeriod.setDate(today.getDate() - daysFromMon - 7);
+      startOfPeriod.setHours(0, 0, 0, 0);
+      days = 7;
+    } else if (scale === 'this-month') {
+      startOfPeriod = new Date(today.getFullYear(), today.getMonth(), 1);
+      days = today.getDate();
+    } else if (scale === 'prev-month') {
+      const prevMonth = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
+      const prevYear  = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+      startOfPeriod = new Date(prevYear, prevMonth, 1);
+      const endOfPrevMonth = new Date(prevYear, prevMonth + 1, 0);
+      days = endOfPrevMonth.getDate();
+    } else if (scale === 'view-all') {
+      // Find earliest task or just default to 30 days if none
+      const earliestTask = tasks.reduce((min, t) => {
+        const d = new Date(t.created_at);
+        return (d && !isNaN(d) && d < min) ? d : min;
+      }, new Date());
+      startOfPeriod = new Date(earliestTask);
+      startOfPeriod.setHours(0, 0, 0, 0);
+      days = Math.ceil((today - startOfPeriod) / (1000 * 60 * 60 * 24)) + 1;
+      if (days < 7) days = 7; // show at least a week
     }
-  }
 
-  // KPI updates
-  const completionRate = (totalDone + totalPending) > 0 ? Math.round(totalDone / (totalDone + totalPending) * 100) : 0;
-  const recentStress   = stressLogs.slice(0, Math.ceil(stressLogs.length/2));
-  const olderStress    = stressLogs.slice(Math.ceil(stressLogs.length/2));
-  const recentAvg  = recentStress.length > 0 ? recentStress.reduce((s,l)=>s+l.stress_level,0)/recentStress.length : 0;
-  const olderAvg   = olderStress.length > 0  ? olderStress.reduce((s,l)=>s+l.stress_level,0)/olderStress.length  : recentAvg;
-  const improvement = olderAvg > 0 ? Math.round(((olderAvg - recentAvg) / olderAvg) * 100) : 0;
+    if (days < 1) days = 1;
 
-  document.getElementById('pkpi-streak').textContent      = streakDays + ' days';
-  document.getElementById('pkpi-best').textContent        = bestStress < 100 ? bestStress + '/100' : '—';
-  document.getElementById('pkpi-completion').textContent  = completionRate + '%';
-  document.getElementById('pkpi-improvement').textContent = improvement > 0 ? '+' + improvement + '%' : improvement + '%';
-  document.getElementById('pkpi-improvement').style.color = improvement > 0 ? 'var(--green)' : improvement < 0 ? 'var(--red)' : 'var(--text2)';
+    // How many days back from today does the period start? Fetch enough.
+    const daysBackFromToday = Math.ceil((today - startOfPeriod) / (1000 * 60 * 60 * 24)) + 1;
 
-  Chart.defaults.color = '#8b98a5';
-  Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
-
-  const ctxBar   = document.getElementById('activityBarChart');
-  const ctxDonut = document.getElementById('activityDonutChart');
-  const ctxPolar = document.getElementById('priorityPolarChart');
-  if (!ctxBar) return;
-
-  const gradRed = ctxBar.getContext('2d').createLinearGradient(0,0,0,300);
-  gradRed.addColorStop(0,'rgba(248,113,113,0.8)'); gradRed.addColorStop(1,'rgba(248,113,113,0.05)');
-  const gradBlue = ctxBar.getContext('2d').createLinearGradient(0,0,0,300);
-  gradBlue.addColorStop(0,'rgba(102,126,234,0.85)'); gradBlue.addColorStop(1,'rgba(118,75,162,0.2)');
-
-  barChartInstance = new Chart(ctxBar, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Tasks Done', data: completedData, backgroundColor: gradBlue, borderColor: '#667eea', borderWidth: 1, borderRadius: 5, yAxisID: 'y' },
-        { label: 'Stress Level', data: stressData, type: 'line', borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,0.08)', borderWidth: 2, pointBackgroundColor: '#f87171', pointRadius: 3, tension: 0.4, yAxisID: 'y1', spanGaps: true }
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: { grid: { color: 'rgba(255,255,255,0.03)' } },
-        y: { type: 'linear', position: 'left', beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.03)' } },
-        y1: { type: 'linear', position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false } }
-      },
-      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }
-    }
-  });
-
-  if (ctxDonut) {
-    const d1 = totalDone || 0, d2 = totalPending || 0;
-    const pct = (d1+d2) > 0 ? Math.round(d1/(d1+d2)*100) : 0;
-    const centerText = {
-      id: 'center', beforeDraw(chart) {
-        const {width, height, ctx} = chart;
-        ctx.restore();
-        ctx.font = `600 ${(height/110).toFixed(2)}em 'Plus Jakarta Sans',sans-serif`;
-        ctx.fillStyle = '#f8fafc'; ctx.textBaseline = 'middle';
-        const tx = Math.round((width - ctx.measureText(pct+'%').width)/2);
-        const ty = chart.chartArea.top + (chart.chartArea.bottom - chart.chartArea.top)/2;
-        ctx.fillText(pct+'%', tx, ty - height*0.02);
-        ctx.font = `500 ${(height/320).toFixed(2)}em 'Plus Jakarta Sans',sans-serif`;
-        ctx.fillStyle = '#64748b';
-        const sx = Math.round((width - ctx.measureText('DONE').width)/2);
-        ctx.fillText('DONE', sx, ty + height*0.12);
-        ctx.save();
+    let stressLogs = [];
+    try {
+      const r = await fetch(`${API}/stress-logs?email=${encodeURIComponent(email)}&days=${Math.max(daysBackFromToday, 90)}`);
+      const d = await r.json();
+      const allLogs = d.logs || [];
+      
+      if (scale === 'view-all' && allLogs.length > 0) {
+        const earliestLog = new Date(allLogs[allLogs.length - 1].logged_at);
+        if (earliestLog < startOfPeriod) {
+          startOfPeriod = new Date(earliestLog);
+          startOfPeriod.setHours(0,0,0,0);
+          days = Math.ceil((today - startOfPeriod) / (1000 * 60 * 60 * 24)) + 1;
+        }
       }
-    };
-    donutChartInstance = new Chart(ctxDonut, {
-      type: 'doughnut',
-      data: { labels: ['Done','Pending'], datasets: [{ data: [d1||0, d2||1], backgroundColor: ['#667eea','#334155'], borderWidth: 0, hoverOffset: 4 }] },
-      plugins: [centerText],
-      options: { responsive: true, maintainAspectRatio: false, cutout: '76%', plugins: { legend: { position:'bottom', labels:{ usePointStyle:true, padding:12 } } } }
-    });
-  }
 
-  if (ctxPolar) {
-    if(highP===0&&medP===0&&lowP===0) medP=1;
-    polarChartInstance = new Chart(ctxPolar, {
-      type: 'polarArea',
+      stressLogs = allLogs.filter(l => {
+        const ld = toLocalYYYYMMDD(l.logged_at);
+        const sd = toLocalYYYYMMDD(startOfPeriod);
+        const ed = toLocalYYYYMMDD(today);
+        return ld >= sd && ld <= ed;
+      });
+    } catch {}
+
+    const labels = [], completedData = [], stressData = [];
+    let periodDone = 0;
+    const globalPending = tasks.filter(t => !t.done).length;
+    let bestStress = 100, streakDays = 0, lastActive = false;
+
+    // Build date labels forward from startOfPeriod
+    for (let i = 0; i < days; i++) {
+      const d = new Date(startOfPeriod);
+      d.setDate(startOfPeriod.getDate() + i);
+      const ds = toLocalYYYYMMDD(d);
+      labels.push(d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }));
+
+      const dayDone = tasks.filter(t => {
+        if (!t.done) return false;
+        const actionDate = toLocalYYYYMMDD(t.updated_at || t.created_at);
+        return actionDate === ds;
+      }).length;
+
+      periodDone += dayDone;
+      completedData.push(dayDone);
+
+      const dayLogs = stressLogs.filter(l => toLocalYYYYMMDD(l.logged_at) === ds);
+      if (dayLogs.length > 0) {
+        const avg = dayLogs.reduce((s, l) => s + l.stress_level, 0) / dayLogs.length;
+        stressData.push(parseFloat(avg.toFixed(1)));
+        if (avg < bestStress) bestStress = Math.round(avg);
+        if (lastActive) streakDays++; else streakDays = 1;
+        lastActive = true;
+      } else {
+        stressData.push(null);
+        lastActive = false;
+      }
+    }
+
+    const completionRate = (periodDone + globalPending) > 0 ? Math.round(periodDone / (periodDone + globalPending) * 100) : 0;
+    const half = Math.ceil(stressLogs.length / 2);
+    const recentStress = stressLogs.slice(half);
+    const olderStress  = stressLogs.slice(0, half);
+    const recentAvg = recentStress.length > 0 ? recentStress.reduce((s,l)=>s+l.stress_level,0)/recentStress.length : 0;
+    const olderAvg  = olderStress.length > 0  ? olderStress.reduce((s,l)=>s+l.stress_level,0)/olderStress.length  : recentAvg;
+    const improvement = olderAvg > 0 ? Math.round(((olderAvg - recentAvg) / olderAvg) * 100) : 0;
+
+    const ctxBar   = document.getElementById('activityBarChart');
+    if (ctxBar) {
+      // Dynamic width for horizontal scrolling
+      const minWidth = days * 45; // 45px per day
+      ctxBar.style.width = Math.max(minWidth, ctxBar.parentElement.offsetWidth) + 'px';
+      ctxBar.style.minWidth = '100%';
+    }
+
+    const periodAvgStress = stressLogs.length > 0 ? Math.round(stressLogs.reduce((s, l) => s + l.stress_level, 0) / stressLogs.length) : 0;
+
+    document.getElementById('pkpi-streak').textContent      = streakDays + ' days';
+    document.getElementById('pkpi-avg').textContent         = periodAvgStress > 0 ? periodAvgStress + '/100' : '—';
+    document.getElementById('pkpi-completion').textContent  = completionRate + '%';
+    document.getElementById('pkpi-improvement').textContent = (improvement > 0 ? '+' : '') + improvement + '%';
+    document.getElementById('pkpi-improvement').style.color = improvement > 0 ? 'var(--green)' : improvement < 0 ? 'var(--red)' : 'var(--text2)';
+
+    const ctxDonut = document.getElementById('activityDonutChart');
+    const ctxRadar = document.getElementById('wellbeingRadarChart');
+    if (!ctxBar) return;
+
+    barChartInstance = new Chart(ctxBar, {
+      type: 'bar',
       data: {
-        labels: ['High','Medium','Low'],
-        datasets: [{ data: [highP, medP, lowP], backgroundColor: ['rgba(248,113,113,.75)','rgba(251,191,36,.75)','rgba(74,222,128,.75)'], borderWidth: 1, borderColor: '#1e293b' }]
+        labels,
+        datasets: [
+          {
+            label: 'Tasks Done',
+            data: completedData,
+            backgroundColor: 'rgba(102,126,234,0.75)',
+            borderColor: '#667eea',
+            borderWidth: 1,
+            borderRadius: 4,
+            order: 2  // bars render behind the line
+          },
+          {
+            label: 'Stress Level',
+            data: stressData,
+            type: 'line',
+            borderColor: '#f87171',
+            backgroundColor: 'rgba(248,113,113,0.1)',
+            borderWidth: 2.5,
+            pointBackgroundColor: '#f87171',
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            tension: 0.4,
+            yAxisID: 'y1',
+            spanGaps: true,
+            order: 1  // line renders on top of bars
+          }
+        ]
       },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend:{ position:'bottom', labels:{ usePointStyle:true } } }, scales:{ r:{ grid:{ color:'rgba(255,255,255,.03)' }, ticks:{ display:false } } } }
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#94a3b8' } },
+          y: { beginAtZero: true, ticks: { stepSize: 1, color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y1: { position: 'right', min: 0, max: 100, grid: { display: false }, ticks: { color: '#f87171' } }
+        },
+        plugins: { legend: { labels: { color: '#f8fafc', usePointStyle: true, boxWidth: 6 } } }
+      }
     });
-  }
 
-  // Weekly recommendations
-  renderWeeklyRecommendations(stressLogs, completionRate, improvement);
+    if (ctxDonut) {
+      const centerText = {
+        id: 'center',
+        beforeDraw(chart) {
+          const { width, height, ctx } = chart;
+          ctx.restore();
+          const ds = chart.data.datasets[0].data;
+          const v1 = chart.getDataVisibility(0) ? ds[0] : 0;
+          const v2 = chart.getDataVisibility(1) ? ds[1] : 0;
+          const pct = (v1 + v2) > 0 ? Math.round((v1 / (v1 + v2)) * 100) : 0;
+          ctx.font = `600 ${(height / 110).toFixed(2)}em sans-serif`;
+          ctx.fillStyle = '#f8fafc';
+          ctx.textBaseline = 'middle';
+          ctx.textAlign = 'center';
+          ctx.fillText(pct + '%', width / 2, height / 2 - 10);
+          ctx.font = `500 ${(height / 320).toFixed(2)}em sans-serif`;
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillText('DONE', width / 2, height / 2 + 25);
+          ctx.save();
+        }
+      };
+      donutChartInstance = new Chart(ctxDonut, {
+        type: 'doughnut',
+        data: {
+          labels: ['Done', 'Pending'],
+          datasets: [{ data: [periodDone, globalPending], backgroundColor: ['#667eea', '#334155'], borderWidth: 0 }]
+        },
+        plugins: [centerText],
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '75%',
+          plugins: { legend: { position: 'bottom', labels: { color: '#94a3b8', usePointStyle: true, padding: 15 } } }
+        }
+      });
+    }
+
+    if (ctxRadar) {
+      const radarFocus = (periodDone + globalPending) > 0 ? Math.round((periodDone / (periodDone + globalPending)) * 100) : 0;
+      const avgStress = stressLogs.length > 0 ? stressLogs.reduce((s,l) => s + l.stress_level, 0) / stressLogs.length : 40;
+      const radarData = [
+        radarFocus,
+        100 - avgStress,
+        Math.min(100, (streakDays / (days > 14 ? 20 : 6)) * 100),
+        Math.min(100, (stressLogs.length / (days > 14 ? 15 : 5)) * 100),
+        Math.min(100, Math.max(0, 50 + improvement))
+      ];
+      radarChartInstance = new Chart(ctxRadar, {
+        type: 'radar',
+        data: {
+          labels: ['Focus', 'Calm', 'Consistency', 'Awareness', 'Growth'],
+          datasets: [{ data: radarData, backgroundColor: 'rgba(102,126,234,0.3)', borderColor: '#667eea', borderWidth: 2, pointRadius: 2 }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: { r: { suggestedMin: 0, suggestedMax: 100, ticks: { display: false }, grid: { color: 'rgba(255,255,255,0.1)' }, angleLines: { color: 'rgba(255,255,255,0.1)' }, pointLabels: { color: '#f8fafc', font: { weight: '600' } } } },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+    renderWeeklyRecommendations(stressLogs, completionRate, improvement);
+  } catch (err) {
+    console.error('[Charts] Critical error:', err);
+  }
 }
 window.renderChart = renderChart;
 
@@ -1724,14 +1830,42 @@ function renderWeeklyRecommendations(stressLogs, completionRate, improvement) {
     </div>`).join('');
 }
 
+// ── TASK MAPPING UTILITY ───────────────────────────────────────────────────
+function mapTask(t) {
+  const status = (t.status || 'pending').toLowerCase();
+  
+  // Normalise PostgreSQL timestamps to UTC ISO strings so toLocalYYYYMMDD
+  // always resolves to the correct LOCAL day regardless of browser
+  const normTS = (raw) => {
+    if (!raw) return null;
+    if (typeof raw !== 'string') return raw;
+    if (raw.endsWith('Z') || raw.includes('+')) return raw;
+    return raw.replace(' ', 'T') + 'Z';
+  };
+
+  return {
+    ...t,
+    category: t.category || 'other',
+    done: status === 'done' || status === 'completed',
+    deadline: toLocalYYYYMMDD(t.deadline),
+    updated_at: normTS(t.updated_at),
+    created_at: normTS(t.created_at)
+  };
+}
+window.mapTask = mapTask;
+
 // ── TODAY'S FOCUS LOGIC ──────────────────────────────────────────────────────
 let todayFocusTab = 'todo'; // 'todo' or 'completed'
 
 // 📅 Utility: Robust extraction of YYYY-MM-DD from any date value, correcting for UTC/Local shifts
 function toLocalYYYYMMDD(val) {
   if (!val) return null;
+  // If it's a pure date string (YYYY-MM-DD) without time, return as is to avoid shift
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    return val;
+  }
   const d = new Date(val);
-  if (isNaN(d.getTime())) return val.split(/[T\s]/)[0]; 
+  if (isNaN(d.getTime())) return String(val).split(/[T\s]/)[0];
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');

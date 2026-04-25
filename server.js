@@ -14,15 +14,6 @@ require('dotenv').config();
 const app    = express();
 const PORT   = 3000;
 
-// Disk storage for logs/videos
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname) || '.webm';
-        cb(null, `stress_${Date.now()}_${Math.round(Math.random() * 1e9)}${ext}`);
-    }
-});
-const uploadDisk = multer({ storage });
 const uploadMem  = multer({ storage: multer.memoryStorage() });
 
 const verifiedForDeletion = new Set();
@@ -55,13 +46,32 @@ const PYTHON_URL = 'http://127.0.0.1:5000';
                 logged_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
-        // Ensure video_url exists if table already existed
+        // Ensure video_url and video_data exist if table already existed
         await pool.query(`ALTER TABLE stress_logs ADD COLUMN IF NOT EXISTS video_url TEXT`);
+        await pool.query(`ALTER TABLE stress_logs ADD COLUMN IF NOT EXISTS video_data BYTEA`);
         // Ensure users table has required columns for OTP/Verification
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS otp TEXT`);
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT false`);
         await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
         await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'other'`);
+        
+        // Ensure updated_at is ALWAYS updated on ANY change (pgAdmin or UI)
+        await pool.query(`
+            CREATE OR REPLACE FUNCTION update_updated_at_column()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                NEW.updated_at = CURRENT_TIMESTAMP;
+                RETURN NEW;
+            END;
+            $$ language 'plpgsql';
+        `);
+        await pool.query(`
+            DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
+            CREATE TRIGGER update_tasks_updated_at
+            BEFORE UPDATE ON tasks
+            FOR EACH ROW
+            EXECUTE FUNCTION update_updated_at_column();
+        `);
         
         // Ensure categories table exists
         await pool.query(`
@@ -87,22 +97,17 @@ const PYTHON_URL = 'http://127.0.0.1:5000';
 
         // ─── AUTO-CLEANUP VIDEOS (Older than 7 days) ──────────────────────────
         setInterval(async () => {
-            console.log('[Cleanup] Checking for old videos...');
+            console.log('[Cleanup] Clearing old videos from database...');
             const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
             try {
-                const oldLogs = await pool.query(
-                    'SELECT video_url FROM stress_logs WHERE logged_at < $1 AND video_url IS NOT NULL',
+                // Clear the video data from DB for old logs
+                const result = await pool.query(
+                    'UPDATE stress_logs SET video_data = NULL WHERE logged_at < $1 AND video_data IS NOT NULL',
                     [cutoff]
                 );
-                for (const row of oldLogs.rows) {
-                    const filePath = path.join(process.cwd(), row.video_url);
-                    if (fs.existsSync(filePath)) {
-                        fs.unlinkSync(filePath);
-                        console.log(`[Cleanup] Deleted old video: ${row.video_url}`);
-                    }
+                if (result.rowCount > 0) {
+                    console.log(`[Cleanup] Cleared ${result.rowCount} old videos from database.`);
                 }
-                // Clear the URLs from DB as well if files are gone
-                await pool.query('UPDATE stress_logs SET video_url = NULL WHERE logged_at < $1', [cutoff]);
             } catch (err) { console.error('[Cleanup] Error:', err.message); }
         }, 24 * 60 * 60 * 1000); // Once a day
 
@@ -114,7 +119,6 @@ const PYTHON_URL = 'http://127.0.0.1:5000';
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(process.cwd()));
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'))); // Static folder for videos
 app.get('/', (_req, res) => res.sendFile(path.join(process.cwd(), 'dashboard.html')));
 
 // ─── HEALTH ─────────────────────────────────────────────────────────────────
@@ -284,7 +288,11 @@ app.get('/get-tasks', async (req, res) => {
     if (!email) return res.status(400).json({ error: 'Email required' });
     try {
         const result = await pool.query(
-            'SELECT * FROM tasks WHERE user_email = $1 ORDER BY created_at DESC',
+            `SELECT id, user_email, title,
+                    TO_CHAR(deadline, 'YYYY-MM-DD') AS deadline,
+                    priority, status, category,
+                    created_at, updated_at
+             FROM tasks WHERE user_email = $1 ORDER BY created_at DESC`,
             [email]
         );
         res.json({ tasks: result.rows });
@@ -301,14 +309,15 @@ app.post('/add-task', async (req, res) => {
     try {
         const result = await pool.query(
             `INSERT INTO tasks (user_email, title, deadline, priority, status, category)
-             VALUES ($1, $2, $3, $4, 'pending', $5) RETURNING id`,
+             VALUES ($1, $2, $3, $4, 'pending', $5) 
+             RETURNING id, user_email, title, TO_CHAR(deadline, 'YYYY-MM-DD') AS deadline, priority, status, category, created_at, updated_at`,
             [user_email, title, deadline, priority || 'medium', category || 'other']
         );
         
         // ✨ Move category to top
         if (category) touchCategory(user_email, category);
 
-        res.json({ success: true, id: result.rows[0].id, message: 'Task added' });
+        res.json({ success: true, task: result.rows[0], message: 'Task added' });
     } catch (err) {
         console.error('[Persistence] Add task error:', err.message || err);
         if (err.message.includes('column "category" does not exist')) {
@@ -324,7 +333,7 @@ app.post('/update-task', async (req, res) => {
     if (!taskId || !title || !user_email) return res.status(400).json({ error: 'Missing fields' });
     try {
         const result = await pool.query(
-            `UPDATE tasks SET title=$1, deadline=$2, priority=$3, status=$4, category=$5
+            `UPDATE tasks SET title=$1, deadline=$2, priority=$3, status=$4, category=$5, updated_at=CURRENT_TIMESTAMP
              WHERE id=$6 AND user_email=$7 RETURNING id`,
             [title, deadline, priority, status || 'pending', category || 'other', taskId, user_email]
         );
@@ -570,19 +579,55 @@ app.post('/analyze', async (req, res) => {
 });
 
 // ─── LOG STRESS READING ───────────────────────────────────────────────────
-app.post('/log-stress', async (req, res) => {
-    const { email, stressLevel, source, faceEmotion, voiceEmotion, note, videoUrl } = req.body;
+app.post('/log-stress', uploadMem.single('video'), async (req, res) => {
+    // req.body fields are strings when using uploadMem/multer
+    const { email, stressLevel, source, faceEmotion, voiceEmotion, note } = req.body;
+    let videoUrl = req.body.videoUrl || null;
+    let videoData = null;
+
     if (!email || stressLevel === undefined) return res.status(400).json({ error: 'email and stressLevel required' });
+
+    if (req.file) {
+        videoData = req.file.buffer;
+    }
+
     try {
-        await pool.query(
-            `INSERT INTO stress_logs (user_email, stress_level, source, face_emotion, voice_emotion, note, video_url)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [email, stressLevel, source || 'slider', faceEmotion || null, voiceEmotion || null, note || null, videoUrl || null]
+        const result = await pool.query(
+            `INSERT INTO stress_logs (user_email, stress_level, source, face_emotion, voice_emotion, note, video_url, video_data)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+            [email, parseInt(stressLevel), source || 'slider', faceEmotion || null, voiceEmotion || null, note || null, videoUrl, videoData]
         );
-        res.json({ success: true });
+        
+        const newId = result.rows[0].id;
+        
+        // If we have video data, update the videoUrl to our new virtual route
+        if (videoData) {
+            videoUrl = `/video/${newId}`;
+            await pool.query('UPDATE stress_logs SET video_url = $1 WHERE id = $2', [videoUrl, newId]);
+        }
+
+        res.json({ success: true, id: newId, videoUrl });
     } catch(err) {
         console.error('Log stress error:', err.message);
         res.status(500).json({ error: 'Failed to log stress' });
+    }
+});
+
+// ─── SERVE VIDEO FROM DB ────────────────────────────────────────────────────
+app.get('/video/:id', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT video_data FROM stress_logs WHERE id = $1', [req.params.id]);
+        if (result.rows.length === 0 || !result.rows[0].video_data) {
+            return res.status(404).json({ error: 'Video not found or expired' });
+        }
+        
+        const videoBuffer = result.rows[0].video_data;
+        res.setHeader('Content-Type', 'video/webm'); // Adjust if you support multiple types
+        res.setHeader('Content-Length', videoBuffer.length);
+        res.send(videoBuffer);
+    } catch (err) {
+        console.error('Fetch video error:', err);
+        res.status(500).json({ error: 'Error fetching video' });
     }
 });
 
@@ -688,11 +733,9 @@ app.post('/detect-combined', uploadMem.fields([{ name: 'audio', maxCount: 1 }, {
     }
 });
 
-// ─── UPLOAD STRESS VIDEO ────────────────────────────────────────────────────
-app.post('/upload-video', uploadDisk.single('video'), (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'No video file' });
-    const videoUrl = `/uploads/${req.file.filename}`;
-    res.json({ success: true, videoUrl });
+// Legacy upload route — now returns warning but handled for compatibility
+app.post('/upload-video', (req, res) => {
+    res.json({ success: true, message: 'Deprecated: Use /log-stress with FormData instead', videoUrl: null });
 });
 
 // ─── PROFILE ────────────────────────────────────────────────────────────────

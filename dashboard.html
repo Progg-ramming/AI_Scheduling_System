@@ -574,21 +574,24 @@
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;">
             <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;"><i class="fas fa-chart-line" style="color:var(--primary);margin-right:.5rem;"></i>Growth &amp; Progress</h2>
             <select id="chartTimeScale" onchange="renderChart()" style="background:var(--card2);color:var(--text);border:1px solid var(--border);padding:.3rem .6rem;border-radius:var(--r-sm);outline:none;">
-              <option value="week">Past Week</option>
-              <option value="month">Past Month</option>
+              <option value="this-week">This Week</option>
+              <option value="past-week">Past Week</option>
+              <option value="this-month">This Month</option>
+              <option value="prev-month">Previous Month</option>
+              <option value="view-all">View All</option>
             </select>
           </div>
           <!-- KPI row -->
           <div class="progress-kpi-row" id="progressKpis">
             <div class="kpi-box"><div class="kpi-val" id="pkpi-streak">—</div><div class="kpi-lbl">Day Streak</div><div class="kpi-sub" style="color:var(--yellow);">🔥 active days</div></div>
-            <div class="kpi-box"><div class="kpi-val" id="pkpi-best">—</div><div class="kpi-lbl">Best Stress</div><div class="kpi-sub" style="color:var(--green);">lowest recorded</div></div>
+            <div class="kpi-box"><div class="kpi-val" id="pkpi-avg">—</div><div class="kpi-lbl">Avg Stress</div><div class="kpi-sub" style="color:var(--green);">period average</div></div>
             <div class="kpi-box"><div class="kpi-val" id="pkpi-completion">—</div><div class="kpi-lbl">Completion</div><div class="kpi-sub" style="color:var(--primary);">task rate</div></div>
             <div class="kpi-box"><div class="kpi-val" id="pkpi-improvement">—</div><div class="kpi-lbl">Improvement</div><div class="kpi-sub" style="color:var(--accent);">vs last period</div></div>
           </div>
           <!-- Charts -->
           <div class="chart-section">
             <h4><i class="fas fa-wave-square"></i>Stress Trend vs Tasks Completed</h4>
-            <div class="chart-wrap"><canvas id="activityBarChart"></canvas></div>
+            <div class="chart-wrap" style="overflow-x:auto; -webkit-overflow-scrolling:touch;"><canvas id="activityBarChart"></canvas></div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:1.5rem;">
             <div style="flex:1;min-width:200px;">
@@ -599,8 +602,8 @@
             </div>
             <div style="flex:1;min-width:200px;">
               <div class="chart-section">
-                <h4><i class="fas fa-layer-group"></i>Priority Distribution</h4>
-                <div class="chart-wrap" style="height:200px;"><canvas id="priorityPolarChart"></canvas></div>
+                <h4><i class="fas fa-star-half-stroke"></i>Well-being Index</h4>
+                <div class="chart-wrap" style="height:200px;"><canvas id="wellbeingRadarChart"></canvas></div>
               </div>
             </div>
           </div>

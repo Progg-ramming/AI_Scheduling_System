@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS stress_logs (
     voice_emotion TEXT,            -- Detected voice emotion
     note TEXT,                     -- User's manual note
     video_url TEXT,                -- Path to the stored video report
+    video_data BYTEA,              -- Binary video content stored in DB
     logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -84,6 +85,9 @@ DO $$
 BEGIN 
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stress_logs' AND column_name='video_url') THEN
         ALTER TABLE stress_logs ADD COLUMN video_url TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stress_logs' AND column_name='video_data') THEN
+        ALTER TABLE stress_logs ADD COLUMN video_data BYTEA;
     END IF;
 END $$;
 
