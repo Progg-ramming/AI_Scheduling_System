@@ -6,8 +6,20 @@ const user = JSON.parse(localStorage.getItem('user') || 'null');
 if (!user) { window.location.href = 'login.html'; }
 else {
   const name = user.name || user.full_name || 'User';
+  const initial = name.charAt(0).toUpperCase();
+  const colors = ['#a855f7', '#6366f1', '#ec4899', '#f59e0b', '#10b981', '#ef4444'];
+  const randomColor = colors[Math.floor(Math.random() * colors.length)];
+  
   document.getElementById('sidebarName').textContent = name;
-  document.getElementById('sidebarAvatar').textContent = name.charAt(0).toUpperCase();
+  
+  const avatars = ['sidebarAvatar', 'topbarAvatar'];
+  avatars.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.textContent = initial;
+      el.style.background = randomColor;
+    }
+  });
 }
 
 const h = new Date().getHours();
