@@ -8,6 +8,7 @@ const axios     = require('axios');
 const multer    = require('multer');
 const path      = require('path');
 const fs        = require('fs');
+const http = require('http');  // ADD THIS LINE
 const FormData  = require('form-data');
 require('dotenv').config();
 
@@ -459,40 +460,37 @@ app.post('/detect-voice-emotion', uploadMem.single('audio'), async (req, res) =>
 app.post('/detect-combined', uploadMem.fields([{ name: 'audio', maxCount: 1 }, { name: 'frame', maxCount: 1 }]), async (req, res) => {
     try {
         const form = new FormData();
-        
-        // Attach audio if provided
+
         if (req.files && req.files['audio']) {
             const audioFile = req.files['audio'][0];
             form.append('audio', audioFile.buffer, {
-                filename:    'voice.wav',
-                contentType: audioFile.mimetype || 'audio/wav'
+                filename: 'voice.wav', contentType: audioFile.mimetype || 'audio/wav'
             });
         }
-        
-        // Attach frame if provided
         if (req.files && req.files['frame']) {
             const frameFile = req.files['frame'][0];
             form.append('frame', frameFile.buffer, {
-                filename:    'frame.jpg',
-                contentType: frameFile.mimetype || 'image/jpeg'
+                filename: 'frame.jpg', contentType: frameFile.mimetype || 'image/jpeg'
             });
         }
 
+        // ── NEW: pass user identity + task context to personalization model ──
+        const userEmail = req.body.user_email || req.body.userEmail || 'anonymous';
+        form.append('user_id',       userEmail);
+        form.append('task_type',     req.body.task_type     || 'unknown');
+        form.append('task_priority', req.body.task_priority || 'medium');
+
         const pyRes = await axios.post(`${PYTHON_URL}/detect-combined`, form, {
-            headers: form.getHeaders(),
-            timeout: 60000
+            headers: form.getHeaders(), timeout: 60000
         });
         return res.json(pyRes.data);
     } catch (err) {
         console.log('[Combined] Realtime bridge error:', err.message);
-        // Smart fallback: return plausible offline estimate
         return res.json({
-            face_emotion:    'Neutral',
-            face_stress:     40,
-            voice_emotion:   'Neutral',
-            voice_stress:    40,
-            combined_stress: 40,
-            source:          'fallback'
+            face_emotion: 'Neutral', face_stress: 40,
+            voice_emotion: 'Neutral', voice_stress: 40,
+            combined_stress: 40, adjusted_stress: 40,
+            personalization: {}, source: 'fallback'
         });
     }
 });
@@ -518,6 +516,38 @@ app.get('/profile', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: 'Failed to fetch profile' });
     }
+});
+
+
+
+// ─── MODEL PROFILE PAGE ─────────────────────────────────────────────────────
+app.get('/model-profile', (req, res) => {
+    res.sendFile(path.join(process.cwd(), 'model_profile.html'));
+});
+
+// ─── PROXY: /flask-api/* → Python bridge :5000/* ────────────────────────────
+// Browser calls /flask-api/user/xxx/profile → Node forwards to Flask :5000
+app.all('/flask-api/*', (req, res) => {
+    const flaskPath = req.path.replace('/flask-api', '');
+    const qs        = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+    const options   = {
+        hostname: '127.0.0.1',
+        port:     5000,
+        path:     flaskPath + qs,
+        method:   req.method,
+        headers:  { ...req.headers, host: '127.0.0.1:5000' },
+    };
+    const proxy = http.request(options, (flaskRes) => {
+        res.status(flaskRes.statusCode);
+        Object.entries(flaskRes.headers).forEach(([k, v]) => res.setHeader(k, v));
+        flaskRes.pipe(res);
+    });
+    proxy.on('error', (err) => {
+        console.error('[Flask proxy]', err.message);
+        res.status(502).json({ error: 'Flask bridge unreachable', detail: err.message });
+    });
+    if (['POST', 'PUT', 'PATCH'].includes(req.method)) req.pipe(proxy);
+    else proxy.end();
 });
 
 // ─── DELETE ACCOUNT ─────────────────────────────────────────────────────────

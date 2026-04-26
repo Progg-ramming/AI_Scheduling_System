@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MindFlow — Your Stress Profile</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap');
+
+  :root {
+    --bg:        #0c0f0a;
+    --surface:   #131710;
+    --surface2:  #1a1f16;
+    --border:    #252b20;
+    --text:      #e8ede0;
+    --muted:     #6b7560;
+    --accent:    #a8d878;
+    --accent2:   #d4f0a0;
+    --warn:      #e8c870;
+    --danger:    #e87860;
+    --optimal:   #78d8a8;
+    --radius:    12px;
+    --mono:      'DM Mono', monospace;
+    --serif:     'DM Serif Display', serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── LAYOUT ─────────────────────────────────────────────────── */
+  .shell {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+
+  /* ── HEADER ─────────────────────────────────────────────────── */
+  .header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 40px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header-left h1 {
+    font-family: var(--serif);
+    font-size: 32px;
+    font-weight: 400;
+    color: var(--accent2);
+    letter-spacing: -0.5px;
+  }
+  .header-left .sub {
+    color: var(--muted);
+    margin-top: 4px;
+    font-size: 12px;
+  }
+  .user-badge {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .user-badge .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0.3; }
+  }
+
+  /* ── STATUS ROW ─────────────────────────────────────────────── */
+  .status-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    opacity: 0.4;
+  }
+  .stat-card.warn::before  { background: var(--warn); }
+  .stat-card.danger::before { background: var(--danger); }
+  .stat-card.ok::before    { background: var(--optimal); }
+  .stat-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .stat-value {
+    font-family: var(--serif);
+    font-size: 28px;
+    color: var(--accent2);
+    line-height: 1;
+  }
+  .stat-value.warn   { color: var(--warn); }
+  .stat-value.danger { color: var(--danger); }
+  .stat-value.ok     { color: var(--optimal); }
+  .stat-sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* ── PERSONALIZATION PROGRESS BAR ───────────────────────────── */
+  .pers-bar-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-bottom: 28px;
+  }
+  .pers-bar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .pers-bar-header span:first-child {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+  .pers-pct {
+    font-family: var(--serif);
+    font-size: 18px;
+    color: var(--accent);
+  }
+  .bar-track {
+    height: 6px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent2) 100%);
+    transition: width 0.8s cubic-bezier(.4,0,.2,1);
+  }
+  .pers-stages {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+  }
+  .pers-stage {
+    font-size: 10px;
+    color: var(--muted);
+    text-align: center;
+    flex: 1;
+  }
+  .pers-stage.active { color: var(--accent); }
+
+  /* ── GRID (charts + panels) ─────────────────────────────────── */
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .panel-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── HOUR CHART ─────────────────────────────────────────────── */
+  #hourChart {
+    width: 100%;
+    height: 100px;
+    display: block;
+  }
+
+  /* ── STRESS GAUGE ───────────────────────────────────────────── */
+  .gauge-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 0;
+  }
+  #gaugeCanvas { display: block; }
+  .gauge-label {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  /* ── TASK BARS ───────────────────────────────────────────────── */
+  .task-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .task-name {
+    font-size: 11px;
+    color: var(--muted);
+    width: 90px;
+    flex-shrink: 0;
+    text-transform: capitalize;
+  }
+  .task-bar-track {
+    flex: 1;
+    height: 5px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .task-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--accent);
+    transition: width 0.6s ease;
+  }
+  .task-val {
+    font-size: 11px;
+    color: var(--text);
+    width: 30px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  /* ── MODALITY WEIGHTS ───────────────────────────────────────── */
+  .mod-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .mod-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: var(--surface2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+  .mod-info { flex: 1; }
+  .mod-name { font-size: 11px; color: var(--text); margin-bottom: 4px; }
+  .mod-bar-track {
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .mod-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  .mod-pct {
+    font-size: 11px;
+    color: var(--accent);
+    width: 36px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  /* ── INSIGHTS ────────────────────────────────────────────────── */
+  .insight-item {
+    display: flex;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .insight-item:last-child { border-bottom: none; }
+  .insight-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+
+  /* ── TREND INDICATOR ────────────────────────────────────────── */
+  .trend-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+  }
+  .trend-chip.improving { background: rgba(120,216,168,0.12); color: var(--optimal); }
+  .trend-chip.stable    { background: rgba(168,216,120,0.12); color: var(--accent); }
+  .trend-chip.worsening { background: rgba(232,120,96,0.12);  color: var(--danger); }
+
+  /* ── RECENT HISTORY SPARKLINE ───────────────────────────────── */
+  #sparkCanvas { width: 100%; display: block; }
+
+  /* ── DATA SOURCE BADGE ──────────────────────────────────────── */
+  .data-source {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+  .data-source.weights { color: var(--warn); border-color: rgba(232,200,112,0.3); }
+
+  /* ── LOADING / ERROR ────────────────────────────────────────── */
+  .loading-msg {
+    text-align: center;
+    color: var(--muted);
+    padding: 60px 0;
+    font-size: 12px;
+  }
+  .error-msg {
+    background: rgba(232,120,96,0.08);
+    border: 1px solid rgba(232,120,96,0.3);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    color: var(--danger);
+    font-size: 12px;
+    margin-bottom: 20px;
+  }
+
+  /* ── REFRESH BTN ─────────────────────────────────────────────── */
+  .refresh-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── DAYS PICKER ─────────────────────────────────────────────── */
+  .days-picker {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+  .day-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .day-btn.active, .day-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(168,216,120,0.06);
+  }
+
+  @media (max-width: 680px) {
+    .status-row { grid-template-columns: 1fr 1fr; }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <h1>Stress Profile</h1>
+      <div class="sub">Personalized model — learns from every scan</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
+      <div class="user-badge">
+        <span class="dot"></span>
+        <span id="userBadgeText">loading…</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ERROR AREA -->
+  <div id="errorArea" style="display:none"></div>
+
+  <!-- LOADING STATE -->
+  <div id="loadingMsg" class="loading-msg">Fetching your profile…</div>
+
+  <!-- MAIN CONTENT (hidden until loaded) -->
+  <div id="mainContent" style="display:none">
+
+    <!-- STATUS ROW -->
+    <div class="status-row">
+      <div class="stat-card" id="cardCurrent">
+        <div class="stat-label">Current Stress</div>
+        <div class="stat-value" id="valCurrent">—</div>
+        <div class="stat-sub" id="valLabel">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Personal Baseline</div>
+        <div class="stat-value" id="valBaseline">—</div>
+        <div class="stat-sub" id="valBaselineDelta">—</div>
+      </div>
+      <div class="stat-card ok">
+        <div class="stat-label">Performance Sweet Spot</div>
+        <div class="stat-value ok" id="valPeak">—</div>
+        <div class="stat-sub" id="valZone">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Scans</div>
+        <div class="stat-value" id="valScans">—</div>
+        <div class="stat-sub" id="valModelStatus">—</div>
+      </div>
+    </div>
+
+    <!-- PERSONALIZATION PROGRESS -->
+    <div class="pers-bar-wrap">
+      <div class="pers-bar-header">
+        <span>Model Personalization</span>
+        <span class="pers-pct" id="persPct">0%</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" id="persBar" style="width:0%"></div>
+      </div>
+      <div class="pers-stages">
+        <div class="pers-stage" id="stage0">Population<br>prior</div>
+        <div class="pers-stage" id="stage1">Baseline<br>learned</div>
+        <div class="pers-stage" id="stage2">Patterns<br>active</div>
+        <div class="pers-stage" id="stage3">Fully<br>personalized</div>
+      </div>
+    </div>
+
+    <!-- CHARTS ROW -->
+    <div class="grid-2">
+      <!-- Current gauge -->
+      <div class="panel">
+        <div class="panel-title">Live Stress Gauge</div>
+        <div class="gauge-wrap">
+          <canvas id="gaugeCanvas" width="200" height="110"></canvas>
+          <div class="gauge-label" id="gaugeLabel">—</div>
+        </div>
+      </div>
+
+      <!-- Hour-of-day chart -->
+      <div class="panel">
+        <div class="panel-title">Your Stress by Hour</div>
+        <canvas id="hourChart" height="100"></canvas>
+        <div style="display:flex;justify-content:space-between;margin-top:6px">
+          <span style="font-size:10px;color:var(--muted)">12am</span>
+          <span style="font-size:10px;color:var(--muted)">6am</span>
+          <span style="font-size:10px;color:var(--muted)">12pm</span>
+          <span style="font-size:10px;color:var(--muted)">6pm</span>
+          <span style="font-size:10px;color:var(--muted)">11pm</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- TASK + MODALITY ROW -->
+    <div class="grid-3">
+      <!-- Task sensitivity -->
+      <div class="panel">
+        <div class="panel-title">Stress by Task Type</div>
+        <div id="taskBars"></div>
+      </div>
+
+      <!-- Modality reliability -->
+      <div class="panel">
+        <div class="panel-title">Signal Reliability</div>
+        <div class="mod-row">
+          <div class="mod-icon">👁️</div>
+          <div class="mod-info">
+            <div class="mod-name">Face (AU landmarks)</div>
+            <div class="mod-bar-track">
+              <div class="mod-bar-fill" id="faceBar" style="width:0%"></div>
+            </div>
+          </div>
+          <div class="mod-pct" id="facePct">—</div>
+        </div>
+        <div class="mod-row">
+          <div class="mod-icon">🎙️</div>
+          <div class="mod-info">
+            <div class="mod-name">Voice (jitter/HNR)</div>
+            <div class="mod-bar-track">
+              <div class="mod-bar-fill" id="voiceBar" style="width:0%"></div>
+            </div>
+          </div>
+          <div class="mod-pct" id="voicePct">—</div>
+        </div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <div class="stat-label">Recovery Rate</div>
+          <div style="font-family:var(--serif);font-size:20px;color:var(--accent2);margin-top:4px" id="recoveryRate">—</div>
+          <div style="font-size:11px;color:var(--muted)">stress points / minute</div>
+        </div>
+      </div>
+
+      <!-- Insights -->
+      <div class="panel">
+        <div class="panel-title">Insights</div>
+        <div id="insightsList"></div>
+      </div>
+    </div>
+
+    <!-- TRENDS SECTION -->
+    <div class="panel">
+      <div class="panel-title">Stress Trend</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="days-picker">
+          <button class="day-btn active" onclick="loadTrends(7,this)">7d</button>
+          <button class="day-btn" onclick="loadTrends(14,this)">14d</button>
+          <button class="day-btn" onclick="loadTrends(30,this)">30d</button>
+        </div>
+        <div id="trendChip"></div>
+      </div>
+      <div id="trendDataSource"></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+        <div>
+          <div class="stat-label">Average</div>
+          <div style="font-family:var(--serif);font-size:22px;color:var(--accent2)" id="trendAvg">—</div>
+        </div>
+        <div>
+          <div class="stat-label">Peak</div>
+          <div style="font-family:var(--serif);font-size:22px;color:var(--danger)" id="trendMax">—</div>
+        </div>
+        <div>
+          <div class="stat-label">Lowest</div>
+          <div style="font-family:var(--serif);font-size:22px;color:var(--optimal)" id="trendMin">—</div>
+        </div>
+      </div>
+      <canvas id="sparkCanvas" height="60"></canvas>
+    </div>
+
+  </div><!-- /mainContent -->
+</div><!-- /shell -->
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+const API_BASE = 'http://localhost:3000/flask-api';
+// user_id pulled from query param ?uid=xxx or localStorage
+const USER_ID = new URLSearchParams(location.search).get('uid') ||
+                localStorage.getItem('mindflow_uid') || 'anonymous';
+
+// State
+let profileData  = null;
+let trendsData   = null;
+let latestAdjusted = null;
+let latestRaw      = null;
+let lastInsights   = [];
+
+// ── FETCH HELPERS ────────────────────────────────────────────────────────────
+async function api(path) {
+  const r = await fetch(API_BASE + path);
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorArea');
+  el.style.display = 'block';
+  el.innerHTML = `<div class="error-msg">⚠ ${msg}</div>`;
+}
+
+// ── LOAD ALL ─────────────────────────────────────────────────────────────────
+async function loadAll() {
+  document.getElementById('loadingMsg').style.display = 'block';
+  document.getElementById('mainContent').style.display = 'none';
+  document.getElementById('errorArea').style.display = 'none';
+  try {
+    [profileData] = await Promise.all([
+      api(`/user/${USER_ID}/profile`),
+    ]);
+    await loadTrends(7, document.querySelector('.day-btn.active'));
+    renderAll();
+    document.getElementById('loadingMsg').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'block';
+  } catch(e) {
+    document.getElementById('loadingMsg').style.display = 'none';
+    showError(`Could not reach MindFlow API at ${API_BASE}. Make sure bridge.py is running. (${e.message})`);
+  }
+}
+
+async function loadTrends(days, btn) {
+  if (btn) {
+    document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  try {
+    trendsData = await api(`/user/${USER_ID}/trends?days=${days}`);
+    if (profileData) renderTrends();
+  } catch(e) {
+    console.warn('Trends load error:', e);
+  }
+}
+
+// ── RENDER ALL ───────────────────────────────────────────────────────────────
+function renderAll() {
+  if (!profileData) return;
+  const p = profileData;
+
+  document.getElementById('userBadgeText').textContent = USER_ID;
+
+  // Stat cards
+  const adj = latestAdjusted ?? p.baseline;
+  setStressCard(adj);
+  document.getElementById('valBaseline').textContent     = p.baseline;
+  document.getElementById('valBaselineDelta').textContent = '±' + p.stress_std + ' std dev';
+  document.getElementById('valPeak').textContent         = p.peak_perf_stress;
+  document.getElementById('valZone').textContent         = 'optimal ± 10 pts';
+  document.getElementById('valScans').textContent        = p.scan_count;
+  document.getElementById('valModelStatus').textContent  = statusLabel(p.model_status);
+
+  // Personalization bar
+  const pct = p.personalization_pct;
+  document.getElementById('persPct').textContent = pct + '%';
+  document.getElementById('persBar').style.width = pct + '%';
+  // Stage highlights
+  const stages = [0, 20, 50, 90];
+  stages.forEach((threshold, i) => {
+    document.getElementById('stage' + i).classList.toggle('active', pct >= threshold);
+  });
+
+  // Gauge
+  drawGauge(adj);
+  document.getElementById('gaugeLabel').textContent =
+    (latestRaw !== null ? `raw ${latestRaw} → adjusted ${adj}` : `adjusted score: ${adj}`);
+
+  // Hour chart
+  drawHourChart(p.hour_bias, p.baseline);
+
+  // Task bars
+  renderTaskBars(p.task_sensitivity, p.baseline);
+
+  // Modality reliability
+  const fr = Math.round(p.face_reliability * 100);
+  const vr = Math.round(p.voice_reliability * 100);
+  document.getElementById('faceBar').style.width  = fr + '%';
+  document.getElementById('voiceBar').style.width = vr + '%';
+  document.getElementById('facePct').textContent  = fr + '%';
+  document.getElementById('voicePct').textContent = vr + '%';
+  document.getElementById('recoveryRate').textContent = (p.recovery_rate * 100).toFixed(1);
+
+  // Insights
+  renderInsights(lastInsights.length ? lastInsights : [
+    'Collecting baseline data — insights will appear after ' + Math.max(0, 10 - p.scan_count) + ' more scans.',
+  ]);
+
+  renderTrends();
+}
+
+function setStressCard(val) {
+  const el = document.getElementById('cardCurrent');
+  const vEl = document.getElementById('valCurrent');
+  const lEl = document.getElementById('valLabel');
+  el.className = 'stat-card' + (val > 70 ? ' danger' : val > 55 ? ' warn' : val < 30 ? ' ok' : '');
+  vEl.className = 'stat-value' + (val > 70 ? ' danger' : val > 55 ? ' warn' : val < 30 ? ' ok' : '');
+  vEl.textContent = Math.round(val);
+  lEl.textContent = stressLabel(val);
+}
+
+function stressLabel(v) {
+  return v<=20?'Very Relaxed':v<=40?'Relaxed':v<=55?'Mild Stress':v<=70?'Moderate Stress':v<=85?'High Stress':'Very High Stress';
+}
+function statusLabel(s) {
+  return {'population_prior':'Using defaults','warming_up':'Building profile','personalized':'Personalized','fully_personalized':'Fully personalized'}[s] || s;
+}
+
+// ── GAUGE ────────────────────────────────────────────────────────────────────
+function drawGauge(value) {
+  const canvas = document.getElementById('gaugeCanvas');
+  const ctx    = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const cx = W/2, cy = H - 10, r = 80;
+  const startAngle = Math.PI, endAngle = 2 * Math.PI;
+  const valueAngle = startAngle + (value / 100) * Math.PI;
+
+  // Track
+  ctx.beginPath(); ctx.arc(cx, cy, r, startAngle, endAngle);
+  ctx.strokeStyle = '#1a1f16'; ctx.lineWidth = 14; ctx.stroke();
+
+  // Filled arc
+  const color = value > 70 ? '#e87860' : value > 55 ? '#e8c870' : value < 30 ? '#78d8a8' : '#a8d878';
+  ctx.beginPath(); ctx.arc(cx, cy, r, startAngle, valueAngle);
+  ctx.strokeStyle = color; ctx.lineWidth = 14;
+  ctx.lineCap = 'round'; ctx.stroke();
+
+  // Needle
+  const nx = cx + (r) * Math.cos(valueAngle);
+  const ny = cy + (r) * Math.sin(valueAngle);
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(nx, ny);
+  ctx.strokeStyle = '#e8ede0'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, 5, 0, 2*Math.PI);
+  ctx.fillStyle = '#e8ede0'; ctx.fill();
+
+  // Labels
+  ctx.fillStyle = '#6b7560'; ctx.font = '11px DM Mono, monospace'; ctx.textAlign = 'center';
+  ctx.fillText('0', cx - r - 8, cy + 4);
+  ctx.fillText('100', cx + r + 10, cy + 4);
+  ctx.fillStyle = color; ctx.font = 'bold 22px DM Serif Display, serif'; ctx.textAlign = 'center';
+  ctx.fillText(Math.round(value), cx, cy - 20);
+}
+
+// ── HOUR CHART ───────────────────────────────────────────────────────────────
+function drawHourChart(hourBias, baseline) {
+  const canvas = document.getElementById('hourChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth || 380, H = 100;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+
+  const values = hourBias.map(b => Math.max(0, Math.min(100, baseline + b)));
+  const min = Math.min(...values) - 5, max = Math.max(...values) + 5;
+  const norm = v => H - ((v - min) / (max - min)) * (H - 16) - 8;
+
+  // Fill
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = (i / 23) * W, y = norm(v);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, 'rgba(168,216,120,0.25)');
+  grad.addColorStop(1, 'rgba(168,216,120,0)');
+  ctx.fillStyle = grad; ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  values.forEach((v, i) => {
+    const x = (i / 23) * W, y = norm(v);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = '#a8d878'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+
+  // Baseline reference line
+  ctx.beginPath();
+  ctx.setLineDash([4, 4]);
+  const by = norm(baseline);
+  ctx.moveTo(0, by); ctx.lineTo(W, by);
+  ctx.strokeStyle = 'rgba(107,117,96,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Current hour dot
+  const now = new Date().getHours();
+  const cx = (now / 23) * W, cy = norm(values[now]);
+  ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 2*Math.PI);
+  ctx.fillStyle = '#a8d878'; ctx.fill();
+}
+
+// ── TASK BARS ────────────────────────────────────────────────────────────────
+function renderTaskBars(sensitivity, baseline) {
+  const container = document.getElementById('taskBars');
+  container.innerHTML = '';
+  const entries = Object.entries(sensitivity).filter(([k]) => k !== 'unknown');
+  const stressValues = entries.map(([, s]) => s * baseline);
+  const maxVal = Math.max(...stressValues, 70);
+
+  entries.forEach(([task, sens]) => {
+    const val = Math.round(sens * baseline);
+    const pct = Math.round((val / maxVal) * 100);
+    const color = val > 65 ? 'var(--danger)' : val > 50 ? 'var(--warn)' : 'var(--accent)';
+    container.innerHTML += `
+      <div class="task-row">
+        <div class="task-name">${task}</div>
+        <div class="task-bar-track">
+          <div class="task-bar-fill" style="width:${pct}%;background:${color}"></div>
+        </div>
+        <div class="task-val">${val}</div>
+      </div>`;
+  });
+}
+
+// ── INSIGHTS ─────────────────────────────────────────────────────────────────
+function renderInsights(insights) {
+  const el = document.getElementById('insightsList');
+  if (!insights || !insights.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:12px">Run more scans to generate insights.</div>';
+    return;
+  }
+  el.innerHTML = insights.map(i =>
+    `<div class="insight-item"><div class="insight-dot"></div><div>${i}</div></div>`
+  ).join('');
+}
+
+// ── TRENDS ────────────────────────────────────────────────────────────────────
+function renderTrends() {
+  if (!trendsData) return;
+  const t = trendsData;
+
+  // Data source badge
+  const dsEl = document.getElementById('trendDataSource');
+  if (t.source === 'weights_only') {
+    dsEl.innerHTML = '<div class="data-source weights">⚠ Scan history deleted — showing weight-derived estimates</div>';
+  } else {
+    dsEl.innerHTML = `<div class="data-source">${t.scans_in_period} scans in period • ${t.days_analyzed}d window</div>`;
+  }
+
+  // Trend chip
+  const chip = document.getElementById('trendChip');
+  const trendMap = {improving:'↓ Improving', stable:'→ Stable', worsening:'↑ Worsening'};
+  chip.innerHTML = `<div class="trend-chip ${t.trend}">${trendMap[t.trend] || t.trend}</div>`;
+
+  document.getElementById('trendAvg').textContent = t.avg_stress ?? '—';
+  document.getElementById('trendMax').textContent = t.max_stress ?? '—';
+  document.getElementById('trendMin').textContent = t.min_stress ?? '—';
+
+  // Sparkline from avg_by_hour
+  if (t.avg_by_hour) drawSparkline(t.avg_by_hour);
+}
+
+function drawSparkline(avgByHour) {
+  const canvas = document.getElementById('sparkCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth || 600, H = 60;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+
+  const hours  = Array.from({length:24}, (_,i) => i);
+  const values = hours.map(h => avgByHour[h] ?? null);
+  const valid  = values.filter(v => v !== null);
+  if (!valid.length) return;
+
+  const min = Math.min(...valid) - 3, max = Math.max(...valid) + 3;
+  const norm = v => H - ((v - min) / (max - min)) * (H - 10) - 5;
+
+  // Draw line skipping nulls
+  let penDown = false;
+  ctx.beginPath(); ctx.strokeStyle = '#a8d878'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+  hours.forEach((h, i) => {
+    if (values[i] === null) { penDown = false; return; }
+    const x = (i / 23) * W, y = norm(values[i]);
+    if (!penDown) { ctx.moveTo(x, y); penDown = true; }
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Hour labels
+  ctx.fillStyle = '#6b7560'; ctx.font = '10px DM Mono, monospace';
+  [0, 6, 12, 18].forEach(h => {
+    const x = (h / 23) * W;
+    ctx.textAlign = h === 0 ? 'left' : h === 18 ? 'right' : 'center';
+    ctx.fillText(h + ':00', x, H);
+  });
+}
+
+// ── LIVE UPDATE FROM /detect-combined ────────────────────────────────────────
+// Call this function from your existing JS that receives scan results,
+// passing the full JSON response from /detect-combined.
+// e.g.  window.MindFlowProfile.updateFromScan(responseJson)
+window.MindFlowProfile = {
+  updateFromScan(data) {
+    if (!data) return;
+    latestAdjusted = data.adjusted_stress ?? data.combined_stress;
+    latestRaw      = data.raw_stress;
+
+    if (data.personalization) {
+      const p = data.personalization;
+      lastInsights = p.insights || [];
+      if (p.personalization_pct !== undefined && profileData) {
+        profileData.personalization_pct = p.personalization_pct;
+        profileData.scan_count          = p.scan_count ?? profileData.scan_count;
+      }
+    }
+
+    // Live-update just the cards + gauge without full reload
+    if (document.getElementById('mainContent').style.display !== 'none') {
+      setStressCard(latestAdjusted);
+      drawGauge(latestAdjusted);
+      document.getElementById('gaugeLabel').textContent =
+        `raw ${latestRaw} → adjusted ${latestAdjusted}`;
+      renderInsights(lastInsights);
+      if (profileData) {
+        document.getElementById('persPct').textContent = profileData.personalization_pct + '%';
+        document.getElementById('persBar').style.width = profileData.personalization_pct + '%';
+        document.getElementById('valScans').textContent = profileData.scan_count;
+      }
+    }
+  }
+};
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+loadAll();
+
+// Auto-refresh every 30 seconds if page is visible
+setInterval(() => {
+  if (!document.hidden && document.getElementById('mainContent').style.display !== 'none') {
+    api(`/user/${USER_ID}/profile`).then(d => { profileData = d; renderAll(); }).catch(()=>{});
+  }
+}, 30000);
+</script>
+</body>
+</html>
