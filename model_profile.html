@@ -4,24 +4,26 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MindFlow — Your Stress Profile</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap');
 
   :root {
-    --bg:        #0c0f0a;
-    --surface:   #131710;
-    --surface2:  #1a1f16;
-    --border:    #252b20;
-    --text:      #e8ede0;
-    --muted:     #6b7560;
-    --accent:    #a8d878;
-    --accent2:   #d4f0a0;
-    --warn:      #e8c870;
-    --danger:    #e87860;
-    --optimal:   #78d8a8;
-    --radius:    12px;
-    --mono:      'DM Mono', monospace;
-    --serif:     'DM Serif Display', serif;
+    --bg:        #EBDEC0;
+    --surface:   #CDD4B1;
+    --surface2:  #D2AB80;
+    --border:    rgba(0,0,0,0.12);
+    --text:      #000000;
+    --muted:     #105666;
+    --accent:    #B5C99A;
+    --accent2:   #8EA48B;
+    --warn:      #D4A259;
+    --danger:    #C96B5A;
+    --optimal:   #5B8C6F;
+    --radius:    16px;
+    --mono:      'Plus Jakarta Sans', sans-serif;
+    --serif:     'Playfair Display', serif;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -30,7 +32,7 @@
     background: var(--bg);
     color: var(--text);
     font-family: var(--mono);
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1.6;
     min-height: 100vh;
   }
@@ -197,6 +199,7 @@
     margin-bottom: 16px;
   }
   .panel {
+    display: block;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -422,8 +425,54 @@
   }
 </style>
 </head>
-<body>
-<div class="shell">
+<body class="dashboard-page">
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon"><i class="fas fa-seedling"></i></div>
+    <span>Mind<b>Flow</b></span>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">
+      <div class="nav-section-label">Main</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html'"><i class="fas fa-home"></i>Dashboard</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Tasks</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html#schedule'"><i class="fas fa-list-check"></i>View Schedule</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html#add'"><i class="fas fa-plus-circle"></i>Add Task</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html#calendar'"><i class="fas fa-calendar-alt"></i>Calendar</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Insights</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html#analytics'"><i class="fas fa-chart-line"></i>Analytics</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html#history'"><i class="fas fa-heartbeat"></i>Stress History</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Account</div>
+      <div class="nav-item" onclick="window.location.href='settings.html'"><i class="fas fa-cog"></i>Settings</div>
+      <div class="nav-item" onclick="window.location.href='account.html'"><i class="fas fa-user-circle"></i>My Account</div>
+      <div class="nav-item active" onclick="window.location.href='/model-profile?uid=' + encodeURIComponent(USER_ID)"><i class="fas fa-chart-bar"></i>My Stress Profile</div>
+    </div>
+  </nav>
+  <div class="sidebar-bottom">
+    <div class="user-avatar" id="sidebarAvatar">?</div>
+    <div class="user-info">
+      <div class="user-name" id="sidebarName">Loading...</div>
+      <div class="user-sub">Well-being Member</div>
+    </div>
+    <button class="logout-btn" id="logoutBtn" title="Logout"><i class="fas fa-sign-out-alt"></i></button>
+  </div>
+</aside>
+<div class="dash-main">
+  <div class="topbar">
+    <div class="topbar-left"><h1>Stress Profile</h1></div>
+    <div class="topbar-right">
+      <span class="topbar-date" id="todayDate"></span>
+      <button class="btn btn-outline" onclick="loadAll()">↻ Refresh</button>
+    </div>
+  </div>
+  <div class="page-content">
+    <div class="shell">
 
   <!-- HEADER -->
   <div class="header">
@@ -594,7 +643,7 @@
 
 <script>
 // ── CONFIG ──────────────────────────────────────────────────────────────────
-const API_BASE = 'http://localhost:3000/flask-api';
+const API_BASE = window.location.origin + '/flask-api';
 // user_id pulled from query param ?uid=xxx or localStorage
 const USER_ID = new URLSearchParams(location.search).get('uid') ||
                 localStorage.getItem('mindflow_uid') || 'anonymous';
@@ -634,7 +683,7 @@ async function loadAll() {
     document.getElementById('mainContent').style.display = 'block';
   } catch(e) {
     document.getElementById('loadingMsg').style.display = 'none';
-    showError(`Could not reach MindFlow API at ${API_BASE}. Make sure bridge.py is running. (${e.message})`);
+    showError(`Could not reach MindFlow API at ${API_BASE}. Make sure bridge_v3.py is running. (${e.message})`);
   }
 }
 
