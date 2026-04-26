@@ -53,6 +53,37 @@ CREATE TABLE IF NOT EXISTS tasks_logs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 5. USER PERSONALIZATION (Weights & Models)
+CREATE TABLE IF NOT EXISTS user_personalization (
+    user_email VARCHAR(100) PRIMARY KEY REFERENCES users(email) ON DELETE CASCADE,
+    weights JSONB NOT NULL,
+    ml_model BYTEA, -- Pickled SGD model
+    last_ai_order JSONB,
+    last_deferred_ids JSONB,
+    last_ai_title TEXT,
+    last_ai_message TEXT,
+    last_stress_used REAL,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 6. USER SCAN STATS (Personalization History)
+CREATE TABLE IF NOT EXISTS user_scan_stats (
+    id SERIAL PRIMARY KEY,
+    user_email VARCHAR(100) REFERENCES users(email) ON DELETE CASCADE,
+    timestamp DOUBLE PRECISION,
+    hour INTEGER,
+    day_of_week INTEGER,
+    raw_stress REAL,
+    adjusted_stress REAL,
+    face_stress REAL,
+    voice_stress REAL,
+    face_conf REAL,
+    voice_conf REAL,
+    task_type TEXT,
+    task_priority TEXT,
+    outcome_rating REAL DEFAULT -1
+);
+
 -- ══════════════════════════════════════════════════════════════════════════
 -- Migrations / Fixes for existing databases:
 -- ══════════════════════════════════════════════════════════════════════════
