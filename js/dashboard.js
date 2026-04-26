@@ -15,7 +15,7 @@ if (sidebarAvatar) sidebarAvatar.textContent = name.charAt(0).toUpperCase();
 // ── OPEN MODEL PROFILE PAGE ───────────────────────────
 function openModelProfile() {
     const email = user?.email || localStorage.getItem('email') || 'anonymous';
-    window.location.href = 'model_profile.html?uid=' + encodeURIComponent(email);
+    window.location.href = '/model-profile?uid=' + encodeURIComponent(email);
 }
 window.openModelProfile = openModelProfile;
 

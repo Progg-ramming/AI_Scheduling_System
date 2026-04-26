@@ -527,7 +527,7 @@ app.get('/model-profile', (req, res) => {
 
 // ─── PROXY: /flask-api/* → Python bridge :5000/* ────────────────────────────
 // Browser calls /flask-api/user/xxx/profile → Node forwards to Flask :5000
-app.all('/flask-api/*', (req, res) => {
+app.all('/flask-api/*path', (req, res) => {
     const flaskPath = req.path.replace('/flask-api', '');
     const qs        = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
     const options   = {
