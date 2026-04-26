@@ -1,222 +1,166 @@
-# user_profile_model.py — MindFlow Personalization Layer
+# user_profile_model.py — MindFlow Personalization Engine v2
 # Location: models/user_profile_model.py
 #
-# WHAT THIS DOES:
-#   Each user gets their own adaptive ML profile that learns:
-#     1. Personal stress baseline     — your "normal" is not the same as anyone else's
-#     2. Stress-performance curve     — do YOU work better at stress=40 or stress=20?
-#     3. Time-of-day stress rhythms   — morning/afternoon/evening patterns
-#     4. Modality reliability         — is your face or voice a better stress signal?
-#     5. Task-type sensitivity        — creative vs routine tasks under stress
-#     6. Recovery rate                — how fast do you typically de-stress?
+# KEY DESIGN PRINCIPLES:
 #
-# ML APPROACH:
-#   - Per-user online learning (SGD Regressor) updates with every session
-#   - Bayesian-style prior from population data, updated with user observations
-#   - Feature store: SQLite per-user history (lightweight, no server required)
-#   - Confidence-aware: low-data users get population priors; high-data users
-#     get personalized predictions
+#   1. SCAN-DELETION SAFE:
+#      The model stores ONLY mathematical weights (floats) in model.pkl.
+#      Raw scan data (video/audio) is NEVER stored inside the model.
+#      Session rows in SQLite store only derived stats (stress score, hour, task type).
+#      When those rows are deleted after retention period → model is unaffected.
+#      The learning is already baked into the weights before deletion happens.
+#
+#   2. ONLINE LEARNING (trains after every single scan):
+#      Uses SGDRegressor with partial_fit() — updates weights incrementally.
+#      No retraining from scratch. No batch accumulation needed.
+#      Each scan → immediate weight update → model improves instantly.
+#
+#   3. WEIGHT PERSISTENCE:
+#      Weights are written to .pkl after every single scan update.
+#      SQLite DB stores only: timestamp, hour, stress score, task type — no raw data.
+#      Even if the entire SQLite DB is wiped, the .pkl weights survive intact.
+#
+# WHAT THE MODEL LEARNS (all stored in weights, not raw rows):
+#   - Personal stress baseline (your "normal" resting level)
+#   - Time-of-day stress patterns per hour (morning cortisol etc.)
+#   - Which modality is more reliable for you (face vs voice)
+#   - Your performance-stress sweet spot (Yerkes-Dodson curve)
+#   - Task-type stress sensitivity (you may spike more in meetings than coding)
+#   - Stress recovery rate between sessions
 #
 # USED BY bridge.py:
-#   from models.user_profile_model import UserStressProfile
-#   profile = UserStressProfile(user_id="user_123")
-#   adjusted = profile.adjust_stress_score(raw_score, context)
-#   profile.record_session(raw_score, adjusted, task_outcome, context)
+#   from models.user_profile_model import get_user_profile
+#   profile = get_user_profile("user_123")
+#   result  = profile.adjust_stress_score(raw_score, context)
+#   profile.record_scan(raw_score, context)   # call after every scan
 
 import os
-import json
 import time
 import sqlite3
 import pickle
 import numpy as np
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List, Tuple
+from datetime import datetime
+from typing import Optional, Dict, List
 
 # ─── PATHS ────────────────────────────────────────────────────────────────────
 _MODULE_DIR  = os.path.dirname(os.path.abspath(__file__))
 _PROFILE_DIR = os.path.join(_MODULE_DIR, "user_profiles")
 os.makedirs(_PROFILE_DIR, exist_ok=True)
 
-
-# ─── POPULATION PRIORS (from published stress research) ──────────────────────
-# These are the defaults before user data accumulates.
-# Source: Lazarus & Folkman (1984), Epel et al. (2018), NIOSH stress research
-POPULATION_PRIOR = {
-    "stress_baseline":        35.0,   # avg resting stress score (0–100)
-    "stress_baseline_std":    12.0,   # individual variation in baselines
-    "peak_performance_stress": 38.0,  # Yerkes-Dodson optimal arousal
-    "performance_curve_width": 20.0,  # how wide the "optimal zone" is
-    "morning_bias":           +3.0,   # morning cortisol spike
-    "afternoon_bias":         -2.0,   # post-lunch dip
-    "evening_bias":           -5.0,   # wind-down
-    "face_reliability":        0.55,  # default face signal weight
-    "voice_reliability":       0.55,  # default voice signal weight
-    "recovery_rate":           0.12,  # stress decay per minute (avg)
-    "high_stakes_sensitivity": 1.15,  # stress amplification for important tasks
+# ─── POPULATION PRIORS ────────────────────────────────────────────────────────
+PRIOR = {
+    "baseline":          35.0,
+    "peak_perf_stress":  38.0,
+    "face_reliability":   0.55,
+    "voice_reliability":  0.55,
+    "recovery_rate":      0.12,
+    "morning_bias":       3.0,
+    "afternoon_bias":    -2.0,
+    "evening_bias":      -5.0,
 }
 
-# Minimum sessions before personalization kicks in
-MIN_SESSIONS_FOR_PERSONALIZATION = 5
-FULL_PERSONALIZATION_SESSIONS    = 30
-
-
-# ─── CONTEXT SCHEMA ───────────────────────────────────────────────────────────
-# Context dict passed in with each reading — not all fields are required
-# context = {
-#   "hour":          int (0–23),
-#   "day_of_week":   int (0=Mon, 6=Sun),
-#   "task_type":     str ("creative"|"analytical"|"routine"|"meeting"|"unknown"),
-#   "task_priority": str ("high"|"medium"|"low"),
-#   "session_duration_min": float,
-#   "face_conf":     float (0–1),
-#   "voice_conf":    float (0–1),
-#   "hnr_value":     float (0–1),
-# }
+WARMUP_SCANS    = 10
+FULL_PERS_SCANS = 50
 
 
 class UserStressProfile:
-    """
-    Per-user adaptive stress model.
-
-    Lifecycle:
-        profile = UserStressProfile("user_abc")
-        adjusted = profile.adjust_stress_score(raw_score, context)
-        # ... session runs ...
-        profile.record_session(raw_score, adjusted, outcome, context)
-        profile.save()
-    """
-
     def __init__(self, user_id: str):
-        self.user_id  = user_id
-        self.db_path  = os.path.join(_PROFILE_DIR, f"{user_id}.db")
-        self.pkl_path = os.path.join(_PROFILE_DIR, f"{user_id}_model.pkl")
+        self.user_id   = user_id
+        self.db_path   = os.path.join(_PROFILE_DIR, f"{user_id}.db")
+        self.pkl_path  = os.path.join(_PROFILE_DIR, f"{user_id}_weights.pkl")
+        self.sgd_path  = os.path.join(_PROFILE_DIR, f"{user_id}_sgd.pkl")
 
         self._init_db()
-        self.params   = self._load_params()
-        self.ml_model = self._load_ml_model()
-        self.session_count = self._get_session_count()
+        self.weights    = self._load_weights()
+        self.ml_model   = self._load_sgd()
+        self.scan_count = self.weights.get("scan_count", 0)
 
-        print(f"[Profile] User '{user_id}' loaded — {self.session_count} sessions recorded")
-
-    # ─── DB INIT ──────────────────────────────────────────────────────────────
+    # ─── DB INIT ──────────────────────────────────────────────────────────
     def _init_db(self):
         conn = sqlite3.connect(self.db_path)
-        c    = conn.cursor()
+        c = conn.cursor()
         c.execute("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp        REAL,
-                hour             INTEGER,
-                day_of_week      INTEGER,
-                raw_stress       REAL,
-                adjusted_stress  REAL,
-                face_stress      REAL,
-                voice_stress     REAL,
-                face_conf        REAL,
-                voice_conf       REAL,
-                task_type        TEXT,
-                task_priority    TEXT,
-                tasks_completed  INTEGER,
-                tasks_deferred   INTEGER,
-                session_duration REAL,
-                outcome_rating   REAL,   -- 0–1: did user complete intended work?
-                notes            TEXT
-            )
-        """)
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS params (
-                key   TEXT PRIMARY KEY,
-                value TEXT
+            CREATE TABLE IF NOT EXISTS scan_stats (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp       REAL,
+                hour            INTEGER,
+                day_of_week     INTEGER,
+                raw_stress      REAL,
+                adjusted_stress REAL,
+                face_stress     REAL,
+                voice_stress    REAL,
+                face_conf       REAL,
+                voice_conf      REAL,
+                task_type       TEXT,
+                task_priority   TEXT,
+                outcome_rating  REAL DEFAULT -1
             )
         """)
         conn.commit()
         conn.close()
 
-    # ─── PARAMS ───────────────────────────────────────────────────────────────
-    def _load_params(self) -> Dict:
-        conn = sqlite3.connect(self.db_path)
-        c    = conn.cursor()
-        rows = c.execute("SELECT key, value FROM params").fetchall()
-        conn.close()
-        params = dict(POPULATION_PRIOR)  # start from population prior
-        for key, val in rows:
-            try:
-                params[key] = float(val)
-            except Exception:
-                params[key] = val
-        return params
+    # ─── WEIGHTS ──────────────────────────────────────────────────────────
+    def _default_weights(self) -> Dict:
+        return {
+            "scan_count":          0,
+            "baseline":            PRIOR["baseline"],
+            "baseline_ema":        PRIOR["baseline"],
+            "peak_perf_stress":    PRIOR["peak_perf_stress"],
+            "face_reliability":    PRIOR["face_reliability"],
+            "voice_reliability":   PRIOR["voice_reliability"],
+            "recovery_rate":       PRIOR["recovery_rate"],
+            "hour_bias":           [0.0] * 24,
+            "task_sensitivity":    {"creative":1.0,"analytical":1.0,"routine":1.0,"meeting":1.0,"unknown":1.0},
+            "stress_mean":         35.0,
+            "stress_var":          144.0,
+            "stress_n":            0,
+            "good_outcome_stress": [],
+            "last_scan_ts":        0.0,
+            "last_stress":         35.0,
+        }
 
-    def _save_params(self):
-        conn = sqlite3.connect(self.db_path)
-        c    = conn.cursor()
-        for key, val in self.params.items():
-            c.execute("INSERT OR REPLACE INTO params (key, value) VALUES (?, ?)",
-                      (key, str(val)))
-        conn.commit()
-        conn.close()
-
-    # ─── ML MODEL (online SGD regressor) ──────────────────────────────────────
-    def _load_ml_model(self):
+    def _load_weights(self) -> Dict:
         if os.path.exists(self.pkl_path):
             try:
                 with open(self.pkl_path, 'rb') as f:
-                    model = pickle.load(f)
-                print(f"[Profile] Personal ML model loaded for '{self.user_id}'")
-                return model
+                    w = pickle.load(f)
+                for k, v in self._default_weights().items():
+                    if k not in w:
+                        w[k] = v
+                return w
             except Exception as e:
-                print(f"[Profile] Could not load model: {e}")
+                print(f"[Profile:{self.user_id}] Weight load error: {e}")
+        return self._default_weights()
+
+    def _save_weights(self):
+        with open(self.pkl_path, 'wb') as f:
+            pickle.dump(self.weights, f)
+
+    def _load_sgd(self):
+        if os.path.exists(self.sgd_path):
+            try:
+                with open(self.sgd_path, 'rb') as f:
+                    return pickle.load(f)
+            except Exception:
+                pass
         return None
 
-    def _save_ml_model(self):
+    def _save_sgd(self):
         if self.ml_model is not None:
-            with open(self.pkl_path, 'wb') as f:
+            with open(self.sgd_path, 'wb') as f:
                 pickle.dump(self.ml_model, f)
 
-    def _get_session_count(self) -> int:
-        conn = sqlite3.connect(self.db_path)
-        c    = conn.cursor()
-        count = c.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
-        conn.close()
-        return count
-
-    # ─── FEATURE VECTOR FOR ML MODEL ─────────────────────────────────────────
-    def _build_feature_vector(self, raw_stress: float, context: Dict) -> np.ndarray:
-        """
-        Builds an 18-dimensional feature vector for the personal ML model.
-        All features normalized to ~0–1 range.
-
-        Features:
-          [0]  raw_stress / 100             — input stress signal
-          [1]  sin(2π * hour/24)            — time-of-day cyclical encoding
-          [2]  cos(2π * hour/24)            —   (both needed for circular continuity)
-          [3]  sin(2π * dow/7)              — day-of-week cyclical
-          [4]  cos(2π * dow/7)
-          [5]  is_morning  (6–11h)          — time-of-day flags
-          [6]  is_afternoon (12–17h)
-          [7]  is_evening  (18–23h)
-          [8]  task_type_creative           — one-hot task type
-          [9]  task_type_analytical
-          [10] task_type_routine
-          [11] task_type_meeting
-          [12] task_priority_high           — one-hot priority
-          [13] task_priority_medium
-          [14] face_conf                    — signal confidence
-          [15] voice_conf
-          [16] stress_vs_baseline           — deviation from personal baseline
-          [17] session_duration_norm        — session length / 60 min
-        """
+    # ─── FEATURE VECTOR ───────────────────────────────────────────────────
+    def _features(self, raw: float, context: Dict) -> np.ndarray:
         hour = int(context.get("hour", datetime.now().hour))
         dow  = int(context.get("day_of_week", datetime.now().weekday()))
-        task = context.get("task_type", "unknown").lower()
-        pri  = context.get("task_priority", "medium").lower()
+        task = str(context.get("task_type", "unknown")).lower()
+        pri  = str(context.get("task_priority", "medium")).lower()
         fc   = float(context.get("face_conf", 0.5))
         vc   = float(context.get("voice_conf", 0.5))
         dur  = float(context.get("session_duration_min", 5.0))
-
-        baseline = self.params.get("stress_baseline", POPULATION_PRIOR["stress_baseline"])
-
-        feat = np.array([
-            raw_stress / 100.0,
+        return np.array([
+            raw / 100.0,
             np.sin(2 * np.pi * hour / 24),
             np.cos(2 * np.pi * hour / 24),
             np.sin(2 * np.pi * dow / 7),
@@ -232,556 +176,417 @@ class UserStressProfile:
             float(pri == "medium"),
             np.clip(fc, 0, 1),
             np.clip(vc, 0, 1),
-            np.clip((raw_stress - baseline) / 50.0, -1, 1),
+            np.clip((raw - self.weights["baseline"]) / 50.0, -1, 1),
             np.clip(dur / 60.0, 0, 2),
         ], dtype=np.float32)
 
-        return feat
+    # ─── ONLINE SGD UPDATE (every scan) ───────────────────────────────────
+    def _sgd_update(self, raw: float, adjusted: float, context: Dict):
+        try:
+            from sklearn.linear_model import SGDRegressor
+            from sklearn.preprocessing import StandardScaler
 
-    # ─── PERSONALIZATION BLEND WEIGHT ─────────────────────────────────────────
-    def _personalization_weight(self) -> float:
-        """
-        Returns 0.0 → 1.0 representing how much to trust personalized model
-        vs population prior.
-          < MIN_SESSIONS   → 0.0  (pure population prior)
-          MIN..FULL range  → linearly interpolates
-          ≥ FULL_SESSIONS  → 1.0  (fully personalized)
-        """
-        n = self.session_count
-        if n < MIN_SESSIONS_FOR_PERSONALIZATION:
-            return 0.0
-        if n >= FULL_PERSONALIZATION_SESSIONS:
-            return 1.0
-        span = FULL_PERSONALIZATION_SESSIONS - MIN_SESSIONS_FOR_PERSONALIZATION
-        return (n - MIN_SESSIONS_FOR_PERSONALIZATION) / span
+            feat = self._features(raw, context).reshape(1, -1)
+            y    = np.array([adjusted])
 
-    # ─── CORE: ADJUST STRESS SCORE ────────────────────────────────────────────
-    def adjust_stress_score(self, raw_stress: float, context: Optional[Dict] = None) -> Dict:
+            if self.ml_model is None:
+                self.ml_model = {
+                    "sgd":    SGDRegressor(loss="huber", alpha=0.001,
+                                           learning_rate="adaptive", eta0=0.01,
+                                           max_iter=1, warm_start=True, random_state=42),
+                    "scaler": StandardScaler(),
+                    "fitted": False,
+                    "n":      0,
+                    "X_init": [],
+                    "y_init": [],
+                }
+
+            m = self.ml_model
+            if not m["fitted"]:
+                m["X_init"].append(feat[0])
+                m["y_init"].append(float(adjusted))
+                if len(m["X_init"]) >= 3:
+                    X = np.array(m["X_init"])
+                    y_arr = np.array(m["y_init"])
+                    m["scaler"].fit(X)
+                    m["sgd"].partial_fit(m["scaler"].transform(X), y_arr)
+                    m["fitted"] = True
+                    m["n"] = len(y_arr)
+                    del m["X_init"], m["y_init"]
+            else:
+                m["sgd"].partial_fit(m["scaler"].transform(feat), y)
+                m["n"] += 1
+
+            self._save_sgd()
+        except Exception as e:
+            print(f"[Profile:{self.user_id}] SGD error: {e}")
+
+    # ─── RECORD SCAN — call after every scan ──────────────────────────────
+    def record_scan(self, raw_stress: float, context: Dict,
+                    outcome_rating: float = -1.0) -> float:
         """
-        Main entry point. Takes raw fused stress score (0–100) + context,
-        returns a dict with:
-          - adjusted_stress   : personalized score (0–100)
-          - baseline_delta    : how far above/below user's normal
-          - performance_zone  : "below_optimal"|"optimal"|"above_optimal"
-          - time_adjustment   : stress adjustment applied for this hour
-          - personalization_pct: how personalized this reading is (0–100%)
-          - insights          : list of human-readable insight strings
+        Call this after every scan. Does:
+          1. Compute adjusted score
+          2. Update all weights immediately (online)
+          3. Update SGD model via partial_fit
+          4. Write ONE lightweight row to SQLite (can be deleted safely later)
+        Returns the adjusted stress score.
         """
+        now = time.time()
+        dt  = datetime.fromtimestamp(now)
+        hour = int(context.get("hour", dt.hour))
+        dow  = int(context.get("day_of_week", dt.weekday()))
+
+        adjusted = self._compute_adjusted(raw_stress, context)
+        self._update_weights(raw_stress, adjusted, hour, context, outcome_rating, now)
+        self._sgd_update(raw_stress, adjusted, context)
+
+        # Write stat row — safe to delete after retention period
+        try:
+            conn = sqlite3.connect(self.db_path)
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO scan_stats (
+                    timestamp, hour, day_of_week,
+                    raw_stress, adjusted_stress,
+                    face_stress, voice_stress, face_conf, voice_conf,
+                    task_type, task_priority, outcome_rating
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                now, hour, dow,
+                round(raw_stress, 2), round(adjusted, 2),
+                round(float(context.get("face_stress", raw_stress)), 2),
+                round(float(context.get("voice_stress", raw_stress)), 2),
+                round(float(context.get("face_conf", 0.5)), 3),
+                round(float(context.get("voice_conf", 0.5)), 3),
+                str(context.get("task_type", "unknown")),
+                str(context.get("task_priority", "medium")),
+                round(float(outcome_rating), 3),
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"[Profile:{self.user_id}] DB write error: {e}")
+
+        print(f"[Profile:{self.user_id}] Scan #{self.scan_count} | "
+              f"raw={raw_stress:.1f} adj={adjusted:.1f} "
+              f"baseline={self.weights['baseline']:.1f} "
+              f"pers={self._pw()*100:.0f}%")
+        return adjusted
+
+    # ─── WEIGHT UPDATE ────────────────────────────────────────────────────
+    def _update_weights(self, raw, adjusted, hour, context, outcome, ts):
+        w  = self.weights
+        n  = w["scan_count"] + 1
+        lr = max(0.01, 1.0 / (n + 5))
+        w["scan_count"] = n
+        self.scan_count = n
+
+        # Welford online mean/variance (no history needed)
+        old_mean = w["stress_mean"]
+        w["stress_n"] += 1
+        delta = raw - old_mean
+        w["stress_mean"] += delta / w["stress_n"]
+        w["stress_var"]   = (w["stress_var"] * (w["stress_n"] - 1) +
+                              delta * (raw - w["stress_mean"])) / w["stress_n"]
+
+        # Baseline EMA
+        alpha = min(lr * 0.3, 0.05)
+        w["baseline_ema"] = w["baseline_ema"] * (1 - alpha) + raw * alpha
+        w["baseline"]     = w["baseline_ema"]
+
+        # Hour bias
+        hour_lr = max(0.02, 1.0 / (n / 24 + 2))
+        observed_bias = raw - w["baseline"]
+        w["hour_bias"][hour] = (w["hour_bias"][hour] * (1 - hour_lr) +
+                                 observed_bias * hour_lr)
+
+        # Modality reliability
+        fs = float(context.get("face_stress", raw))
+        vs = float(context.get("voice_stress", raw))
+        fe = abs(fs - adjusted)
+        ve = abs(vs - adjusted)
+        fr = 1.0 - fe / (max(fe, ve) + 30)
+        vr = 1.0 - ve / (max(fe, ve) + 30)
+        w["face_reliability"]  = w["face_reliability"]  * (1 - lr) + fr * lr
+        w["voice_reliability"] = w["voice_reliability"] * (1 - lr) + vr * lr
+
+        # Recovery rate
+        if w["last_scan_ts"] > 0 and ts > w["last_scan_ts"]:
+            dt_min = (ts - w["last_scan_ts"]) / 60.0
+            if 1 <= dt_min <= 120 and raw < w["last_stress"]:
+                obs_rr = (w["last_stress"] - raw) / (dt_min * 100)
+                w["recovery_rate"] = w["recovery_rate"] * 0.9 + obs_rr * 0.1
+        w["last_scan_ts"] = ts
+        w["last_stress"]  = raw
+
+        # Task sensitivity
+        task = str(context.get("task_type", "unknown")).lower()
+        if task in w["task_sensitivity"]:
+            ratio = raw / max(w["baseline"], 1)
+            w["task_sensitivity"][task] = (w["task_sensitivity"][task] * 0.95 +
+                                            ratio * 0.05)
+
+        # Peak performance (from positive outcome feedback)
+        if outcome > 0.7:
+            pool = w["good_outcome_stress"]
+            pool.append(adjusted)
+            if len(pool) > 50:
+                pool.pop(0)
+            w["good_outcome_stress"] = pool
+            if len(pool) >= 3:
+                w["peak_perf_stress"] = float(np.mean(pool[-20:]))
+
+        self._save_weights()
+
+    # ─── COMPUTE ADJUSTED SCORE ───────────────────────────────────────────
+    def _compute_adjusted(self, raw: float, context: Dict) -> float:
+        pw   = self._pw()
+        w    = self.weights
+        hour = int(context.get("hour", datetime.now().hour))
+        task = str(context.get("task_type", "unknown")).lower()
+
+        # Baseline re-centering
+        shift    = (w["baseline"] - PRIOR["baseline"]) * pw * 0.5
+        adjusted = raw + shift
+
+        # Time-of-day correction
+        pop_time = (PRIOR["morning_bias"]   if 6  <= hour <= 11 else
+                    PRIOR["afternoon_bias"] if 12 <= hour <= 17 else
+                    PRIOR["evening_bias"]   if 18 <= hour <= 23 else 0.0)
+        user_time = w["hour_bias"][hour]
+        time_corr = pop_time * (1 - pw) + user_time * pw
+        adjusted -= time_corr * 0.6
+
+        # Task sensitivity
+        if task in w["task_sensitivity"] and pw > 0.3:
+            sens = w["task_sensitivity"][task]
+            adjusted = adjusted * (0.85 + sens * 0.15)
+
+        # SGD blend
+        if (self.ml_model is not None and
+                self.ml_model.get("fitted") and
+                self.ml_model.get("n", 0) >= 5 and pw > 0.2):
+            try:
+                m    = self.ml_model
+                feat = self._features(raw, context).reshape(1, -1)
+                pred = float(m["sgd"].predict(m["scaler"].transform(feat))[0])
+                blend = min(pw * 0.5, 0.4)
+                adjusted = adjusted * (1 - blend) + pred * blend
+            except Exception:
+                pass
+
+        return round(float(np.clip(adjusted, 0, 100)), 1)
+
+    # ─── PUBLIC: ADJUST STRESS SCORE ──────────────────────────────────────
+    def adjust_stress_score(self, raw: float, context: Optional[Dict] = None) -> Dict:
         if context is None:
             context = {}
-
-        pw = self._personalization_weight()
-        hour = int(context.get("hour", datetime.now().hour))
-
-        # ── 1. Baseline normalization ─────────────────────────────────────────
-        baseline = self.params.get("stress_baseline", POPULATION_PRIOR["stress_baseline"])
-        # Re-center: a score of 50 for someone with baseline 35 is really ~57
-        # for someone with baseline 50. We normalize relative to baseline.
-        population_baseline = POPULATION_PRIOR["stress_baseline"]
-        baseline_correction = (baseline - population_baseline) * pw
-        # If user's baseline is 45 (10 above pop mean), we add 10×pw to score
-        # so that "45 for them" maps closer to "55" on the universal scale
-        normalized_stress = raw_stress + baseline_correction * 0.5
-
-        # ── 2. Time-of-day adjustment ─────────────────────────────────────────
-        # Learned time bias. Pre-personalization: population priors. After: per-user.
-        time_adj = self._get_time_adjustment(hour, pw)
-        time_adjusted_stress = normalized_stress - time_adj  # subtract because
-        # a morning spike means true stress is lower than sensor says
-
-        # ── 3. Modality reliability reweighting ───────────────────────────────
-        # If this user's face readings are historically more reliable, trust them more
-        face_rel  = self.params.get("face_reliability", POPULATION_PRIOR["face_reliability"])
-        voice_rel = self.params.get("voice_reliability", POPULATION_PRIOR["voice_reliability"])
-        face_stress  = float(context.get("face_stress",  raw_stress))
-        voice_stress = float(context.get("voice_stress", raw_stress))
-
-        if face_rel + voice_rel > 0:
-            modality_w_face  = face_rel  / (face_rel + voice_rel)
-            modality_w_voice = voice_rel / (face_rel + voice_rel)
-        else:
-            modality_w_face = modality_w_voice = 0.5
-
-        # Blend personalized modality weights with raw score
-        if "face_stress" in context and "voice_stress" in context:
-            reweighted = (modality_w_face * face_stress + modality_w_voice * voice_stress)
-            modality_adjusted = time_adjusted_stress * (1 - pw) + reweighted * pw
-        else:
-            modality_adjusted = time_adjusted_stress
-
-        # ── 4. ML model prediction (if enough data) ──────────────────────────
-        ml_adjusted = modality_adjusted  # fallback
-        if self.ml_model is not None and pw > 0.3:
-            try:
-                feat = self._build_feature_vector(raw_stress, context)
-                ml_pred = float(self.ml_model.predict(feat.reshape(1, -1))[0])
-                # Blend ML prediction into score
-                ml_adjusted = modality_adjusted * (1 - pw * 0.4) + ml_pred * (pw * 0.4)
-            except Exception as e:
-                print(f"[Profile] ML prediction error: {e}")
-
-        # ── 5. Clip and round ─────────────────────────────────────────────────
-        adjusted = float(np.clip(ml_adjusted, 0, 100))
-
-        # ── 6. Performance zone ───────────────────────────────────────────────
-        peak   = self.params.get("peak_performance_stress", POPULATION_PRIOR["peak_performance_stress"])
-        width  = self.params.get("performance_curve_width", POPULATION_PRIOR["performance_curve_width"])
-        lo, hi = peak - width / 2, peak + width / 2
-
-        if adjusted < lo:
-            perf_zone = "below_optimal"
-        elif adjusted <= hi:
-            perf_zone = "optimal"
-        else:
-            perf_zone = "above_optimal"
-
-        # ── 7. Insights ───────────────────────────────────────────────────────
-        insights = self._generate_insights(raw_stress, adjusted, context, peak, perf_zone, pw)
+        pw       = self._pw()
+        w        = self.weights
+        adjusted = self._compute_adjusted(raw, context)
+        peak     = w["peak_perf_stress"]
+        zone     = ("below_optimal" if adjusted < peak - 10 else
+                    "optimal"       if adjusted <= peak + 10 else
+                    "above_optimal")
+        hour     = int(context.get("hour", datetime.now().hour))
+        pop_time = (PRIOR["morning_bias"]   if 6  <= hour <= 11 else
+                    PRIOR["afternoon_bias"] if 12 <= hour <= 17 else
+                    PRIOR["evening_bias"]   if 18 <= hour <= 23 else 0.0)
+        time_adj = pop_time * (1 - pw) + w["hour_bias"][hour] * pw
 
         return {
-            "adjusted_stress":     round(adjusted, 1),
-            "raw_stress":          round(raw_stress, 1),
-            "baseline":            round(baseline, 1),
-            "baseline_delta":      round(adjusted - baseline, 1),
-            "performance_zone":    perf_zone,
+            "adjusted_stress":     adjusted,
+            "raw_stress":          round(raw, 1),
+            "baseline":            round(w["baseline"], 1),
+            "baseline_delta":      round(adjusted - w["baseline"], 1),
+            "performance_zone":    zone,
             "peak_stress":         round(peak, 1),
             "time_adjustment":     round(time_adj, 1),
             "personalization_pct": round(pw * 100),
-            "face_weight":         round(modality_w_face * (face_rel + voice_rel) / 2 / 0.55, 2),
-            "voice_weight":        round(modality_w_voice * (face_rel + voice_rel) / 2 / 0.55, 2),
-            "insights":            insights,
+            "scan_count":          self.scan_count,
+            "insights":            self._insights(raw, adjusted, context, zone, pw),
         }
 
-    # ─── TIME-OF-DAY ADJUSTMENT ───────────────────────────────────────────────
-    def _get_time_adjustment(self, hour: int, pw: float) -> float:
-        """
-        Returns expected stress bias for this hour.
-        Pre-personalization: population biases. Post: learned per-user.
-        """
-        # Population prior by hour-block
-        if 6 <= hour <= 11:
-            pop_adj = POPULATION_PRIOR["morning_bias"]
-        elif 12 <= hour <= 17:
-            pop_adj = POPULATION_PRIOR["afternoon_bias"]
-        elif 18 <= hour <= 23:
-            pop_adj = POPULATION_PRIOR["evening_bias"]
-        else:
-            pop_adj = 0.0  # late night — minimal data, no adjustment
+    # ─── INSIGHTS ─────────────────────────────────────────────────────────
+    def _insights(self, raw, adj, ctx, zone, pw) -> List[str]:
+        w, out = self.weights, []
+        hour = int(ctx.get("hour", datetime.now().hour))
+        task = str(ctx.get("task_type", "unknown"))
+        pri  = str(ctx.get("task_priority", "medium"))
+        delta = adj - w["baseline"]
 
-        # Learned per-user bias (stored as "time_bias_H" for each hour)
-        learned_key = f"time_bias_{hour}"
-        learned_adj = float(self.params.get(learned_key, pop_adj))
-
-        # Blend population vs learned
-        return pop_adj * (1 - pw) + learned_adj * pw
-
-    # ─── INSIGHTS GENERATOR ───────────────────────────────────────────────────
-    def _generate_insights(self, raw: float, adj: float, context: Dict,
-                            peak: float, zone: str, pw: float) -> List[str]:
-        insights = []
-        hour = int(context.get("hour", datetime.now().hour))
-        task = context.get("task_type", "unknown")
-        pri  = context.get("task_priority", "medium")
-
-        if pw >= 0.5:
-            # Personalized insights
-            baseline = self.params.get("stress_baseline", 35)
-            delta    = adj - baseline
+        if pw >= 0.3:
             if abs(delta) < 5:
-                insights.append(f"You're at your normal baseline ({baseline:.0f}) today.")
+                out.append(f"You're at your personal baseline ({w['baseline']:.0f}) — typical for you.")
             elif delta > 15:
-                insights.append(f"You're {delta:.0f} points above your personal baseline — unusually high for you.")
+                out.append(f"{delta:.0f} pts above your normal — unusually elevated for you.")
             elif delta < -10:
-                insights.append(f"You're notably calmer than your usual baseline of {baseline:.0f}.")
-
+                out.append(f"Notably calmer than your usual baseline of {w['baseline']:.0f}.")
+            hb = w["hour_bias"][hour]
+            if abs(hb) > 4:
+                out.append(f"You usually run {abs(hb):.0f} pts {'higher' if hb > 0 else 'lower'} at this hour.")
             if zone == "optimal":
-                insights.append(f"You're in your personal performance sweet spot ({peak-10:.0f}–{peak+10:.0f}).")
+                out.append(f"In your performance sweet spot ({w['peak_perf_stress']:.0f} ± 10).")
             elif zone == "above_optimal":
-                insights.append("Stress is above your optimal zone — consider a 5-min break before tackling complex work.")
-
-            # Time-of-day pattern insight
-            learned_key = f"time_bias_{hour}"
-            if learned_key in self.params:
-                lb = float(self.params[learned_key])
-                if abs(lb) > 5:
-                    direction = "higher" if lb > 0 else "lower"
-                    insights.append(f"Your data shows you typically run {direction} at this hour — score adjusted for your pattern.")
-
+                out.append("Above your optimal zone — break into 25-min chunks.")
         else:
-            n_remaining = MIN_SESSIONS_FOR_PERSONALIZATION - self.session_count
-            if n_remaining > 0:
-                insights.append(f"Using population averages. {n_remaining} more sessions to unlock your personal model.")
-            else:
-                insights.append("Building your personal stress model — patterns will appear soon.")
+            out.append(f"Building your profile. {max(0, WARMUP_SCANS - self.scan_count)} more scans to unlock personalization.")
 
-        # Task-specific advice
         if task == "creative" and adj > 60:
-            insights.append("Creative work suffers most under high stress — try journalling or a short walk first.")
-        elif task == "analytical" and zone == "optimal":
-            insights.append("Analytical tasks suit your current stress level well.")
-        elif task == "meeting" and adj > 70:
-            insights.append("Consider a 2-min breathing exercise before your meeting.")
-
-        # Priority-specific
+            out.append("Creative work needs calm — try a 5-min reset first.")
         if pri == "high" and adj > 65:
-            insights.append("High-priority task + elevated stress: break it into 25-min Pomodoro chunks.")
+            out.append("High-priority + elevated stress: start with the easiest step.")
+        return out[:3]
 
-        return insights[:4]  # cap at 4 insights
+    def _pw(self) -> float:
+        n = self.scan_count
+        if n < WARMUP_SCANS:    return n / WARMUP_SCANS * 0.3
+        if n >= FULL_PERS_SCANS: return 1.0
+        return 0.3 + (n - WARMUP_SCANS) / (FULL_PERS_SCANS - WARMUP_SCANS) * 0.7
 
-    # ─── RECORD SESSION ───────────────────────────────────────────────────────
-    def record_session(
-        self,
-        raw_stress:      float,
-        adjusted_stress: float,
-        context:         Dict,
-        outcome:         Optional[Dict] = None
-    ):
-        """
-        Call this at the end of a session (or periodically during long sessions).
-
-        outcome (optional): {
-            "tasks_completed":  int,
-            "tasks_deferred":   int,
-            "outcome_rating":   float (0–1),   # self-reported or inferred
-            "notes":            str
-        }
-        """
-        if outcome is None:
-            outcome = {}
-
-        now = time.time()
-        dt  = datetime.fromtimestamp(now)
-
-        conn = sqlite3.connect(self.db_path)
-        c    = conn.cursor()
-        c.execute("""
-            INSERT INTO sessions (
-                timestamp, hour, day_of_week,
-                raw_stress, adjusted_stress,
-                face_stress, voice_stress, face_conf, voice_conf,
-                task_type, task_priority,
-                tasks_completed, tasks_deferred,
-                session_duration, outcome_rating, notes
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (
-            now,
-            dt.hour,
-            dt.weekday(),
-            raw_stress,
-            adjusted_stress,
-            float(context.get("face_stress", raw_stress)),
-            float(context.get("voice_stress", raw_stress)),
-            float(context.get("face_conf", 0.5)),
-            float(context.get("voice_conf", 0.5)),
-            context.get("task_type", "unknown"),
-            context.get("task_priority", "medium"),
-            int(outcome.get("tasks_completed", 0)),
-            int(outcome.get("tasks_deferred", 0)),
-            float(context.get("session_duration_min", 5.0)),
-            float(outcome.get("outcome_rating", -1.0)),
-            outcome.get("notes", ""),
-        ))
-        conn.commit()
-        conn.close()
-
-        self.session_count += 1
-        print(f"[Profile] Session recorded. Total: {self.session_count}")
-
-        # Incrementally update parameters and ML model
-        self._update_params_incremental(raw_stress, adjusted_stress, context, outcome)
-
-        if self.session_count % 5 == 0:
-            self._retrain_ml_model()
-
-        self.save()
-
-    # ─── INCREMENTAL PARAM UPDATE ─────────────────────────────────────────────
-    def _update_params_incremental(
-        self,
-        raw:     float,
-        adj:     float,
-        context: Dict,
-        outcome: Dict
-    ):
-        """
-        Online Bayesian update of key parameters.
-        Uses exponential moving average (EMA) with a learning rate that slows
-        as more data accumulates — classic online Bayesian update.
-        """
-        n  = self.session_count
-        lr = max(0.02, 1.0 / (n + 10))  # learning rate decays with more data
-
-        # ── 1. Stress baseline (EMA of raw stress readings) ───────────────────
-        # Baseline = the user's "typical" resting score
-        # We use a slow EMA so it tracks genuine shifts, not noise
-        current_baseline = self.params.get("stress_baseline", POPULATION_PRIOR["stress_baseline"])
-        new_baseline = current_baseline * (1 - lr * 0.3) + raw * (lr * 0.3)
-        self.params["stress_baseline"] = new_baseline
-
-        # ── 2. Time-of-day bias ───────────────────────────────────────────────
-        hour = int(context.get("hour", datetime.now().hour))
-        key  = f"time_bias_{hour}"
-        # Observed bias = this reading vs current baseline
-        observed_bias = raw - new_baseline
-        current_bias  = float(self.params.get(key, POPULATION_PRIOR.get("morning_bias", 0)))
-        self.params[key] = current_bias * (1 - lr) + observed_bias * lr
-
-        # ── 3. Modality reliability update ───────────────────────────────────
-        # If face and voice disagree a lot, reduce confidence in the noisier one
-        face_s  = float(context.get("face_stress",  raw))
-        voice_s = float(context.get("voice_stress", raw))
-        face_c  = float(context.get("face_conf",  0.5))
-        voice_c = float(context.get("voice_conf", 0.5))
-
-        face_err  = abs(face_s  - adj)
-        voice_err = abs(voice_s - adj)
-        max_err   = max(face_err, voice_err, 1e-6)
-
-        # Lower error → higher reliability update
-        face_rel_update  = 1.0 - face_err  / (max_err + 50)
-        voice_rel_update = 1.0 - voice_err / (max_err + 50)
-
-        fr = self.params.get("face_reliability",  POPULATION_PRIOR["face_reliability"])
-        vr = self.params.get("voice_reliability", POPULATION_PRIOR["voice_reliability"])
-        self.params["face_reliability"]  = fr * (1 - lr) + face_rel_update  * lr
-        self.params["voice_reliability"] = vr * (1 - lr) + voice_rel_update * lr
-
-        # ── 4. Peak performance stress (Yerkes-Dodson optimal) ────────────────
-        # If outcome_rating is available, learn which stress levels yield best results
-        rating = float(outcome.get("outcome_rating", -1.0))
-        if rating >= 0:
-            # Soft update: if good outcome, nudge peak toward current stress
-            if rating > 0.7:
-                peak = self.params.get("peak_performance_stress",
-                                       POPULATION_PRIOR["peak_performance_stress"])
-                self.params["peak_performance_stress"] = peak * (1 - lr * 0.5) + adj * (lr * 0.5)
-
-        # ── 5. Recovery rate (slope of stress across consecutive sessions) ────
-        if n >= 3:
-            recent = self._get_recent_stress_series(5)
-            if len(recent) >= 3:
-                slopes = np.diff(recent)
-                negative_slopes = slopes[slopes < 0]
-                if len(negative_slopes) > 0:
-                    recovery = float(np.mean(np.abs(negative_slopes)))
-                    rr = self.params.get("recovery_rate", POPULATION_PRIOR["recovery_rate"])
-                    self.params["recovery_rate"] = rr * 0.8 + (recovery / 100) * 0.2
-
-    def _get_recent_stress_series(self, n: int) -> np.ndarray:
-        conn = sqlite3.connect(self.db_path)
-        c    = conn.cursor()
-        rows = c.execute(
-            "SELECT adjusted_stress FROM sessions ORDER BY timestamp DESC LIMIT ?", (n,)
-        ).fetchall()
-        conn.close()
-        return np.array([r[0] for r in rows], dtype=float)[::-1]  # oldest first
-
-    # ─── RETRAIN PERSONAL ML MODEL ────────────────────────────────────────────
-    def _retrain_ml_model(self):
-        """
-        Trains/retrains the personal SGD Regressor on accumulated session data.
-        Called every 5 sessions.
-        Target: predict adjusted_stress from context features → personalized prediction.
-        """
-        conn = sqlite3.connect(self.db_path)
-        c    = conn.cursor()
-        rows = c.execute("""
-            SELECT
-                raw_stress, adjusted_stress,
-                hour, day_of_week,
-                face_stress, voice_stress, face_conf, voice_conf,
-                task_type, task_priority, session_duration
-            FROM sessions
-            ORDER BY timestamp DESC
-            LIMIT 200
-        """).fetchall()
-        conn.close()
-
-        if len(rows) < MIN_SESSIONS_FOR_PERSONALIZATION:
-            return
-
-        X, y = [], []
-        for row in rows:
-            (raw_s, adj_s, hour, dow,
-             face_s, voice_s, face_c, voice_c,
-             task, pri, dur) = row
-
-            ctx = {
-                "hour": hour or 12,
-                "day_of_week": dow or 0,
-                "face_stress": face_s or raw_s,
-                "voice_stress": voice_s or raw_s,
-                "face_conf": face_c or 0.5,
-                "voice_conf": voice_c or 0.5,
-                "task_type": task or "unknown",
-                "task_priority": pri or "medium",
-                "session_duration_min": dur or 5.0,
-            }
-            feat = self._build_feature_vector(float(raw_s), ctx)
-            X.append(feat)
-            y.append(float(adj_s))
-
-        X = np.array(X)
-        y = np.array(y)
-
-        try:
-            from sklearn.linear_model import Ridge
-            from sklearn.preprocessing import StandardScaler
-            from sklearn.pipeline import Pipeline
-
-            model = Pipeline([
-                ('scaler', StandardScaler()),
-                ('reg',    Ridge(alpha=1.0))
-            ])
-            model.fit(X, y)
-            self.ml_model = model
-
-            preds = model.predict(X)
-            mae   = np.mean(np.abs(preds - y))
-            print(f"[Profile] Personal model retrained. MAE={mae:.2f} on {len(y)} sessions.")
-        except Exception as e:
-            print(f"[Profile] Retrain error: {e}")
-
-    # ─── STRESS TREND ANALYSIS ────────────────────────────────────────────────
-    def get_stress_trends(self, days: int = 7) -> Dict:
-        """
-        Returns stress trend analysis for the past N days.
-        Used by the frontend to show history charts and insights.
-        """
+    # ─── TRENDS ───────────────────────────────────────────────────────────
+    def get_trends(self, days: int = 7) -> Dict:
         since = time.time() - days * 86400
-        conn  = sqlite3.connect(self.db_path)
-        c     = conn.cursor()
-        rows  = c.execute("""
-            SELECT timestamp, hour, day_of_week, raw_stress, adjusted_stress,
-                   task_type, outcome_rating
-            FROM sessions
-            WHERE timestamp >= ?
-            ORDER BY timestamp ASC
-        """, (since,)).fetchall()
-        conn.close()
+        rows  = []
+        try:
+            conn = sqlite3.connect(self.db_path)
+            rows = conn.execute("""
+                SELECT timestamp, hour, raw_stress, adjusted_stress, task_type, outcome_rating
+                FROM scan_stats WHERE timestamp >= ? ORDER BY timestamp ASC
+            """, (since,)).fetchall()
+            conn.close()
+        except Exception:
+            pass
 
-        if not rows:
-            return {"message": "No data yet", "sessions": 0}
+        w = self.weights
+        if rows:
+            adj_s   = [r[3] for r in rows]
+            hours   = [r[1] for r in rows]
+            tasks   = [r[4] for r in rows]
+            ratings = [r[5] for r in rows if r[5] >= 0]
+            from collections import defaultdict
+            hm = defaultdict(list)
+            for h, s in zip(hours, adj_s): hm[h].append(s)
+            avg_h   = {h: round(np.mean(v), 1) for h, v in hm.items()}
+            tm = defaultdict(list)
+            for t, s in zip(tasks, adj_s):
+                if t: tm[t].append(s)
+            slope = float(np.polyfit(range(len(adj_s)), adj_s, 1)[0]) if len(adj_s) >= 3 else 0
+            return {
+                "source":             "database",
+                "scans_in_period":    len(rows),
+                "total_scans":        self.scan_count,
+                "avg_stress":         round(float(np.mean(adj_s)), 1),
+                "max_stress":         round(float(np.max(adj_s)), 1),
+                "min_stress":         round(float(np.min(adj_s)), 1),
+                "trend":              ("improving" if slope < -0.5 else "worsening" if slope > 0.5 else "stable"),
+                "worst_hour":         max(avg_h, key=avg_h.get) if avg_h else None,
+                "best_hour":          min(avg_h, key=avg_h.get) if avg_h else None,
+                "avg_by_hour":        avg_h,
+                "stress_by_task":     {t: round(np.mean(v), 1) for t, v in tm.items()},
+                "avg_outcome_rating": round(float(np.mean(ratings)), 2) if ratings else None,
+                "days_analyzed":      days,
+                "baseline":           round(w["baseline"], 1),
+                "peak_perf_stress":   round(w["peak_perf_stress"], 1),
+                "personalization_pct":round(self._pw() * 100),
+            }
 
-        ts      = [r[0] for r in rows]
-        raw_s   = [r[3] for r in rows]
-        adj_s   = [r[4] for r in rows]
-        hours   = [r[1] for r in rows]
-        tasks   = [r[5] for r in rows]
-        ratings = [r[6] for r in rows if r[6] >= 0]
-
-        # Trend direction
-        if len(adj_s) >= 3:
-            slope = float(np.polyfit(range(len(adj_s)), adj_s, 1)[0])
-            trend = "improving" if slope < -0.5 else ("worsening" if slope > 0.5 else "stable")
-        else:
-            trend = "insufficient_data"
-
-        # Worst hours
-        from collections import defaultdict
-        hour_scores = defaultdict(list)
-        for h, s in zip(hours, adj_s):
-            hour_scores[h].append(s)
-        avg_by_hour = {h: np.mean(v) for h, v in hour_scores.items()}
-        worst_hour  = max(avg_by_hour, key=avg_by_hour.get) if avg_by_hour else None
-        best_hour   = min(avg_by_hour, key=avg_by_hour.get) if avg_by_hour else None
-
-        # Task performance correlation
-        task_stress = defaultdict(list)
-        for t, s in zip(tasks, adj_s):
-            if t:
-                task_stress[t].append(s)
-        avg_stress_by_task = {t: round(np.mean(v), 1) for t, v in task_stress.items()}
-
+        # Rows deleted — fall back to weights (model still intact)
         return {
-            "sessions":            len(rows),
-            "avg_stress":          round(float(np.mean(adj_s)), 1),
-            "max_stress":          round(float(np.max(adj_s)),  1),
-            "min_stress":          round(float(np.min(adj_s)),  1),
-            "trend":               trend,
-            "worst_hour":          worst_hour,
-            "best_hour":           best_hour,
-            "avg_stress_by_task":  avg_stress_by_task,
-            "avg_outcome_rating":  round(float(np.mean(ratings)), 2) if ratings else None,
-            "baseline":            round(self.params.get("stress_baseline", 35.0), 1),
-            "peak_performance":    round(self.params.get("peak_performance_stress", 38.0), 1),
-            "personalization_pct": round(self._personalization_weight() * 100),
+            "source":              "weights_only",
+            "scans_in_period":     0,
+            "total_scans":         self.scan_count,
+            "avg_stress":          round(w["stress_mean"], 1),
+            "trend":               "scan history deleted — model weights intact",
+            "worst_hour":          int(np.argmax(w["hour_bias"])),
+            "best_hour":           int(np.argmin(w["hour_bias"])),
+            "avg_by_hour":         {i: round(w["hour_bias"][i] + w["baseline"], 1) for i in range(24)},
+            "stress_by_task":      {k: round(v * w["baseline"], 1) for k, v in w["task_sensitivity"].items()},
+            "baseline":            round(w["baseline"], 1),
+            "peak_perf_stress":    round(w["peak_perf_stress"], 1),
+            "personalization_pct": round(self._pw() * 100),
             "days_analyzed":       days,
         }
 
-    # ─── SAVE ─────────────────────────────────────────────────────────────────
-    def save(self):
-        self._save_params()
-        self._save_ml_model()
-
-    # ─── SUMMARY ──────────────────────────────────────────────────────────────
+    # ─── PROFILE SUMMARY ──────────────────────────────────────────────────
     def get_profile_summary(self) -> Dict:
+        w, pw = self.weights, self._pw()
         return {
-            "user_id":            self.user_id,
-            "sessions":           self.session_count,
-            "personalization_pct": round(self._personalization_weight() * 100),
-            "baseline":           round(self.params.get("stress_baseline", 35.0), 1),
-            "peak_performance":   round(self.params.get("peak_performance_stress", 38.0), 1),
-            "face_reliability":   round(self.params.get("face_reliability", 0.55), 2),
-            "voice_reliability":  round(self.params.get("voice_reliability", 0.55), 2),
-            "recovery_rate":      round(self.params.get("recovery_rate", 0.12), 3),
+            "user_id":             self.user_id,
+            "scan_count":          self.scan_count,
+            "personalization_pct": round(pw * 100),
+            "baseline":            round(w["baseline"], 1),
+            "peak_perf_stress":    round(w["peak_perf_stress"], 1),
+            "face_reliability":    round(w["face_reliability"], 3),
+            "voice_reliability":   round(w["voice_reliability"], 3),
+            "recovery_rate":       round(w["recovery_rate"], 4),
+            "hour_bias":           [round(b, 2) for b in w["hour_bias"]],
+            "task_sensitivity":    {k: round(v, 3) for k, v in w["task_sensitivity"].items()},
+            "stress_std":          round(float(np.sqrt(max(w["stress_var"], 0))), 1),
+            "model_status": (
+                "population_prior"   if pw < 0.1 else
+                "warming_up"         if pw < 0.5 else
+                "personalized"       if pw < 0.9 else
+                "fully_personalized"
+            ),
         }
 
 
-# ─── MODULE-LEVEL PROFILE CACHE ──────────────────────────────────────────────
-_profile_cache: Dict[str, UserStressProfile] = {}
+# ─── CACHE ────────────────────────────────────────────────────────────────────
+_cache: Dict[str, UserStressProfile] = {}
 
 def get_user_profile(user_id: str) -> UserStressProfile:
-    """Returns a cached UserStressProfile, loading from disk if necessary."""
-    if user_id not in _profile_cache:
-        _profile_cache[user_id] = UserStressProfile(user_id)
-    return _profile_cache[user_id]
+    if user_id not in _cache:
+        _cache[user_id] = UserStressProfile(user_id)
+    return _cache[user_id]
 
 
-# ─── ENTRY POINT (self-test) ──────────────────────────────────────────────────
+# ─── SELF TEST ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("=" * 60)
-    print("  MindFlow — User Personalization Model Self-Test")
-    print("=" * 60)
-
     import shutil
-    test_dir = os.path.join(_PROFILE_DIR, "test_user_selftest")
-    os.makedirs(test_dir, exist_ok=True)
+    print("=" * 55)
+    print("  MindFlow — User Profile Model Self-Test")
+    print("=" * 55)
 
-    profile = UserStressProfile("test_user_selftest")
-    print(f"\n[1] Fresh profile summary: {profile.get_profile_summary()}")
+    tid = "_selftest_tmp"
+    for ext in ["_weights.pkl","_sgd.pkl",".db"]:
+        p = os.path.join(_PROFILE_DIR, f"{tid}{ext}")
+        if os.path.exists(p): os.remove(p)
 
-    # Simulate 20 sessions
-    print("\n[2] Simulating 20 sessions...")
-    rng = np.random.RandomState(7)
-    for i in range(20):
-        raw = float(rng.normal(42, 12))   # user has slightly higher baseline
+    p = get_user_profile(tid)
+    rng = np.random.RandomState(42)
+
+    print("\n[1] Running 60 simulated scans (user baseline ~43)...")
+    for i in range(60):
+        raw = float(rng.normal(43, 11))
         ctx = {
-            "hour":                 8 + (i % 12),
-            "day_of_week":          i % 5,
-            "face_stress":          raw + rng.normal(0, 5),
-            "voice_stress":         raw + rng.normal(0, 7),
-            "face_conf":            0.7,
-            "voice_conf":           0.6,
-            "task_type":            ["analytical","creative","routine","meeting"][i % 4],
-            "task_priority":        ["high","medium","low"][i % 3],
-            "session_duration_min": rng.uniform(15, 60),
+            "hour": 7 + (i % 14), "day_of_week": i % 5,
+            "face_stress": raw + rng.normal(0, 4),
+            "voice_stress": raw + rng.normal(0, 6),
+            "face_conf": 0.72, "voice_conf": 0.65,
+            "task_type": ["analytical","creative","routine","meeting"][i % 4],
+            "task_priority": ["high","medium","low"][i % 3],
+            "session_duration_min": rng.uniform(10, 45),
         }
-        result = profile.adjust_stress_score(raw, ctx)
-        profile.record_session(raw, result["adjusted_stress"], ctx,
-                                outcome={"tasks_completed": rng.randint(1, 5),
-                                         "outcome_rating":  rng.uniform(0.4, 0.9)})
+        p.record_scan(raw, ctx, outcome_rating=rng.uniform(0.5, 0.95) if i > 10 else -1)
 
-    print(f"\n[3] Profile after 20 sessions: {profile.get_profile_summary()}")
-    print(f"\n[4] Stress trends (7d): {profile.get_stress_trends(7)}")
+    print(f"\n[2] Summary: baseline={p.weights['baseline']:.1f} (expect ~43), scans={p.scan_count}")
+    print(f"    Personalization: {p._pw()*100:.0f}%")
 
-    # Test adjustment
-    test_ctx = {"hour": 9, "day_of_week": 1, "task_type": "analytical",
-                "task_priority": "high", "face_stress": 55, "voice_stress": 50,
-                "face_conf": 0.7, "voice_conf": 0.6}
-    adj = profile.adjust_stress_score(52, test_ctx)
-    print(f"\n[5] Adjusted score for raw=52: {adj}")
+    print("\n[3] Testing scan-deletion resilience...")
+    conn = sqlite3.connect(p.db_path)
+    conn.execute("DELETE FROM scan_stats"); conn.commit(); conn.close()
+    del _cache[tid]
+    p2 = get_user_profile(tid)
+    t2 = p2.get_trends(7)
+    print(f"    scan_count after reload + DB wipe: {p2.scan_count}  (expect 60)")
+    print(f"    baseline after reload: {p2.weights['baseline']:.1f}  (expect ~43)")
+    print(f"    trends source: {t2['source']}  (expect weights_only)")
+    print("    PASS: model intact after data deletion" if p2.scan_count == 60
+          else "    FAIL: scan count lost")
 
-    # Cleanup
-    shutil.rmtree(os.path.join(_PROFILE_DIR, "test_user_selftest"), ignore_errors=True)
-    print("\n[DONE] Self-test complete.")
+    for ext in ["_weights.pkl","_sgd.pkl",".db"]:
+        try: os.remove(os.path.join(_PROFILE_DIR, f"{tid}{ext}"))
+        except: pass
+    print("\n[DONE]")

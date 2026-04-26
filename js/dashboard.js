@@ -10,6 +10,13 @@ else {
   document.getElementById('sidebarAvatar').textContent = name.charAt(0).toUpperCase();
 }
 
+// ── OPEN MODEL PROFILE PAGE ───────────────────────────
+function openModelProfile() {
+    const email = user?.email || localStorage.getItem('email') || 'anonymous';
+    window.location.href = 'model_profile.html?uid=' + encodeURIComponent(email);
+}
+window.openModelProfile = openModelProfile;
+
 const h = new Date().getHours();
 document.getElementById('timeGreet').textContent = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
 document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'});
@@ -295,6 +302,7 @@ async function captureCombined() {
 
     // AI detection
     const fd = new FormData();
+    fd.append('user_email', user?.email || localStorage.getItem('email') || 'anonymous'); // ADD THIS TO TRACK USER SCANS (ML MODEL)
     if (combinedVoiceBlob) fd.append('audio', combinedVoiceBlob, 'voice.wav');
     const video = document.getElementById('cameraFeed');
     if (video && video.readyState >= 2) {
@@ -315,6 +323,9 @@ const data = await res.json();
     currentStressLevel = combined;
     const faceTag = data.face_emotion || 'Neutral';
     const voiceTag = data.voice_emotion || 'Neutral';
+    // Notify profile model of this scan result
+    try { localStorage.setItem('mindflow_last_scan', JSON.stringify({ ...data, timestamp: Date.now() })); } catch(e) {}
+    if (window.MindFlowProfile) window.MindFlowProfile.updateFromScan(data);
 
     status.innerHTML = `
       <span style="color:var(--primary)">👤 Face: <b>${faceTag}</b> (${data.face_stress ?? '?'}/100)</span> &nbsp;|
