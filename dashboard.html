@@ -18,6 +18,16 @@
 }
 .deferred-row td { opacity:.55; }
 .deferred-row td:first-child { text-decoration:line-through; }
+.ai-suggestion.visible { 
+  display:block !important; 
+  animation: fadeInScale 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  border: 1px solid var(--primary);
+  box-shadow: 0 0 20px rgba(102, 126, 234, 0.15);
+}
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
 
 /* ── BEHAVIORAL ANALYSIS ── */
 .insight-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem; }
@@ -103,6 +113,81 @@
   display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;
 }
 .weekly-rec-card p { font-size:.83rem;color:var(--text2);line-height:1.6;margin:0; }
+
+/* ── AI RESULT MODAL (Earthy Pastel Theme) ── */
+.ai-result-box {
+  text-align: center;
+  padding: 2.5rem 2rem;
+  max-width: 480px;
+  background: rgba(235, 222, 192, 0.95) !important; /* Fennel Base with transparency */
+  backdrop-filter: blur(15px) !important;
+  border: 2px solid var(--primary); /* Olive border */
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  border-radius: 24px !important;
+}
+.ai-result-icon {
+  width: 72px;
+  height: 72px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  margin: 0 auto 1.5rem;
+  box-shadow: 0 8px 16px rgba(181, 201, 154, 0.3);
+}
+.ai-result-box h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.8rem;
+}
+.ai-result-content {
+  font-size: 1rem;
+  line-height: 1.6;
+  color: #3D3D3D; /* High visibility grey */
+  margin-bottom: 1.5rem;
+}
+.ai-result-stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.9rem 1.2rem;
+  background: #FFFBE6; /* Milky Pearl accent */
+  border: 1px solid rgba(0,0,0,0.05);
+  border-radius: 12px;
+  margin-bottom: 0.6rem;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.ai-result-stat b { color: var(--green); }
+.deferred-list {
+  text-align: left;
+  margin-top: 1.2rem;
+  background: #F9DADB; /* Soft Peach accent */
+  padding: 1.25rem;
+  border-radius: 16px;
+  border: 1px solid rgba(201, 107, 90, 0.2);
+}
+.deferred-list h4 { 
+  font-size: 0.9rem; 
+  color: #A04030; 
+  margin-bottom: 0.6rem; 
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.deferred-list ul { 
+  margin: 0; 
+  padding-left: 1.4rem; 
+  font-size: 0.85rem; 
+  color: #4A4A4A; 
+}
+.deferred-list li { margin-bottom: 0.3rem; }
 
 @media(max-width:900px){
   .insight-grid,.time-block-grid,.progress-kpi-row{grid-template-columns:1fr 1fr;}
@@ -688,7 +773,18 @@
   </div>
 </div>
 
-<!-- VIDEO REPORT MODAL -->
+<!-- AI RESULT MODAL (Central Notification) -->
+<div class="modal-overlay" id="aiResultModal">
+  <div class="modal-box ai-result-box">
+    <button class="modal-close" onclick="closeAiResultModal()"><i class="fas fa-times"></i></button>
+    <div id="aiResultIcon" class="ai-result-icon"><i class="fas fa-sparkles"></i></div>
+    <h2 id="aiResultTitle">AI Analysis Complete</h2>
+    <div id="aiResultContent" class="ai-result-content"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-primary" onclick="closeAiResultModal()">Got it, Thanks!</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="videoModal">
   <div class="modal-box" style="max-width:600px;">
     <button class="modal-close" onclick="closeVideoModal()"><i class="fas fa-times"></i></button>
