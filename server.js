@@ -84,6 +84,45 @@ const PYTHON_URL = 'http://127.0.0.1:5000';
         await pool.query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS original_cat_id TEXT`);
         await pool.query(`ALTER TABLE categories ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
         
+        // ─── NEW: USER PERSONALIZATION TABLES ──────────────────────────────────
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS user_personalization (
+                user_email VARCHAR(100) PRIMARY KEY REFERENCES users(email) ON DELETE CASCADE,
+                weights JSONB NOT NULL,
+                ml_model BYTEA,
+                last_ai_order JSONB,
+                last_deferred_ids JSONB,
+                last_ai_title TEXT,
+                last_ai_message TEXT,
+                last_stress_used REAL,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        // Ensure columns exist for existing tables
+        await pool.query(`ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_ai_order JSONB`);
+        await pool.query(`ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_deferred_ids JSONB`);
+        await pool.query(`ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_ai_title TEXT`);
+        await pool.query(`ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_ai_message TEXT`);
+        await pool.query(`ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_stress_used REAL`);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS user_scan_stats (
+                id SERIAL PRIMARY KEY,
+                user_email VARCHAR(100) REFERENCES users(email) ON DELETE CASCADE,
+                timestamp DOUBLE PRECISION,
+                hour INTEGER,
+                day_of_week INTEGER,
+                raw_stress REAL,
+                adjusted_stress REAL,
+                face_stress REAL,
+                voice_stress REAL,
+                face_conf REAL,
+                voice_conf REAL,
+                task_type TEXT,
+                task_priority TEXT,
+                outcome_rating REAL DEFAULT -1
+            )
+        `);
+        
         console.log('[DB] Tables and columns ready');
 
         // ─── AUTO-CLEANUP VIDEOS (Older than 7 days) ──────────────────────────
@@ -292,6 +331,32 @@ app.get('/get-tasks', async (req, res) => {
     } catch (err) {
         console.error('Get tasks error:', err);
         res.status(500).json({ error: 'Failed to fetch tasks' });
+    }
+});
+
+// ─── GET AI STATE ───────────────────────────────────────────────────────────
+app.get('/get-ai-state', async (req, res) => {
+    const { email } = req.query;
+    if (!email) return res.status(400).json({ error: 'Email required' });
+    try {
+        const result = await pool.query(
+            'SELECT last_ai_order, last_deferred_ids, last_ai_title, last_ai_message, last_stress_used FROM user_personalization WHERE user_email = $1',
+            [email]
+        );
+        if (result.rows.length === 0) return res.json({ state: null });
+        const row = result.rows[0];
+        res.json({
+            state: {
+                order: row.last_ai_order || [],
+                defer: row.last_deferred_ids || [],
+                title: row.last_ai_title || '',
+                message: row.last_ai_message || '',
+                stress_used: row.last_stress_used || 40
+            }
+        });
+    } catch (err) {
+        console.error('Get AI state error:', err);
+        res.status(500).json({ error: 'Failed to fetch AI state' });
     }
 });
 
@@ -546,6 +611,30 @@ app.post('/analyze', async (req, res) => {
             note: note || '',
             tasks: userTasks
         }, { timeout: 8000 });
+        // Save AI decisions to DB
+        try {
+            await pool.query(
+                `UPDATE user_personalization SET
+                    last_ai_order = $1,
+                    last_deferred_ids = $2,
+                    last_ai_title = $3,
+                    last_ai_message = $4,
+                    last_stress_used = $5,
+                    last_updated = CURRENT_TIMESTAMP
+                 WHERE user_email = $6`,
+                [
+                    JSON.stringify(pyRes.data.order || []),
+                    JSON.stringify(pyRes.data.defer || []),
+                    pyRes.data.title || '',
+                    pyRes.data.message || '',
+                    pyRes.data.stress_used || stressLevel,
+                    userEmail
+                ]
+            );
+        } catch (dbErr) {
+            console.error('[DB] Failed to save AI decisions:', dbErr.message);
+        }
+
         return res.json(pyRes.data);
     } catch (pyErr) {
         console.log('[AI] Python bridge unavailable, using fallback:', pyErr.message);
@@ -559,15 +648,40 @@ app.post('/analyze', async (req, res) => {
             ? priorityW[a.priority||'medium'] - priorityW[b.priority||'medium']
             : priorityW[b.priority||'medium'] - priorityW[a.priority||'medium']
     );
-    return res.json({
+    const fallbackData = {
         title:   isStressed ? 'Take it gentle today' : 'You\'re in great shape!',
         message: isStressed
             ? 'Your stress is elevated. Start with lighter tasks to build momentum and protect your energy. Consider deferring anything high-pressure until tomorrow.'
             : 'You\'re calm and focused — an ideal state for deep work. Tackle your most demanding tasks first while your energy is high.',
         order:  sorted.map(t => t.id),
         defer:  isStressed ? userTasks.filter(t => t.priority==='high').map(t => t.id) : [],
+        stress_used: stressLevel,
         model:  'fallback'
-    });
+    };
+
+    // Save fallback decisions as well
+    try {
+        await pool.query(
+            `UPDATE user_personalization SET
+                last_ai_order = $1,
+                last_deferred_ids = $2,
+                last_ai_title = $3,
+                last_ai_message = $4,
+                last_stress_used = $5,
+                last_updated = CURRENT_TIMESTAMP
+             WHERE user_email = $6`,
+            [
+                JSON.stringify(fallbackData.order),
+                JSON.stringify(fallbackData.defer),
+                fallbackData.title,
+                fallbackData.message,
+                fallbackData.stress_used,
+                userEmail
+            ]
+        );
+    } catch (dbErr) {}
+
+    return res.json(fallbackData);
 });
 
 // ─── LOG STRESS READING ───────────────────────────────────────────────────
