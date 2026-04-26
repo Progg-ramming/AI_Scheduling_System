@@ -7,7 +7,7 @@ echo.
 
 :: 1. Start the AI Bridge in a new window
 echo [1/2] Starting AI Bridge (Python in mindflow_env)...
-start "MindFlow AI Bridge" cmd /k "mindflow_env\Scripts\activate && cd realtime && python bridge.py"
+start "MindFlow AI Bridge" cmd /k "mindflow_env\Scripts\activate &&gi cd realtime && python bridge.py"
 
 :: 2. Wait a few seconds for the bridge to initialize
 timeout /t 5 /nobreak > nul
