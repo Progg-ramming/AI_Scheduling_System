@@ -163,6 +163,9 @@ async function captureCombined() {
   const startBtn = document.getElementById('scanStartBtn');
   captureBtn.disabled = true;
   status.textContent = '🧠 Analysing face & voice...';
+  
+  // Show Loading state in central modal
+  openAiResultModal('Analysing...', '<div style="text-align:center;padding:1rem;"><i class="fas fa-circle-notch fa-spin" style="font-size:2rem;color:var(--primary);"></i><p style="margin-top:1rem;">Processing your face & voice metrics...</p></div>', 'fa-brain');
 
   if (combinedMediaRecorder && combinedMediaRecorder.state !== 'inactive') {
     combinedMediaRecorder.stop();
@@ -214,14 +217,25 @@ const data = await res.json();
       <span style="color:var(--green);font-weight:700;font-size:1.05rem;">→ Combined Stress: ${combined}/100 — ${STRESS_LABELS[Math.min(combined,100)] || ''}</span>
       ${lastVideoUrl ? '<br><small style="color:var(--green)">✓ Video report stored</small>' : ''}
     `;
-    updateStressBadge(combined);
     updateStressStats(combined);
     updateBackgroundByStress(combined);
     detectionSource = 'face_voice_scan';
     lastFaceEmotion = faceTag;
     lastVoiceEmotion = voiceTag;
     document.getElementById('analyzeBtn').style.boxShadow = '0 0 0 3px rgba(74,222,128,0.4)';
-  } catch {
+
+    // Show Central Modal with results
+    const resultHtml = `
+      <div class="ai-result-stat"><span>👤 Face Emotion:</span> <b>${faceTag}</b></div>
+      <div class="ai-result-stat"><span>🎤 Voice Stress:</span> <b>${data.voice_stress ?? '?'} / 100</b></div>
+      <div class="ai-result-stat"><span>⚖️ Combined Score:</span> <b>${combined} / 100</b></div>
+      <p style="margin-top:1rem; font-weight:600; color:var(--text-primary)">Status: ${STRESS_LABELS[Math.min(combined,100)] || ''}</p>
+      <p style="font-size:0.8rem; color:var(--text-tertiary); margin-top:0.5rem;">Click 'Analyze & Personalise' to optimize your schedule based on these readings.</p>
+    `;
+    openAiResultModal('Stress Captured!', resultHtml, 'fa-camera');
+
+  } catch (err) {
+    console.error(err);
     currentStressLevel = 40;
     status.textContent = 'Could not reach AI bridge — using offline estimate (40/100)';
   }
@@ -240,6 +254,10 @@ async function analyzeStress() {
   btn.disabled = true;
   btn.style.boxShadow = '';
   btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Analysing...';
+  
+  // Show Loading state in central modal
+  openAiResultModal('Personalising...', '<div style="text-align:center;padding:1rem;"><i class="fas fa-sparkles fa-spin" style="font-size:2rem;color:var(--primary);"></i><p style="margin-top:1rem;">Optimizing your schedule based on your current state...</p></div>', 'fa-wand-magic-sparkles');
+
   const email = user?.email || localStorage.getItem('email') || '';
   const note = document.getElementById('stressNote').value;
 
@@ -249,7 +267,41 @@ async function analyzeStress() {
       body: JSON.stringify({ stressLevel: currentStressLevel, note, userEmail: email })
     });
     const data = await res.json();
-    showAiSuggestion(data);
+    
+    // Improved Notification: Mention names of deferred tasks
+    let aiMsg = data.message || '';
+    if (data.defer && data.defer.length > 0) {
+      const deferredNames = data.defer.map(id => tasks.find(t => t.id == id)?.title).filter(Boolean);
+      if (deferredNames.length > 0) {
+        aiMsg += `<br><br><div style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid rgba(255,255,255,0.1);">
+          <b style="color:var(--red)">AI Deferred ${deferredNames.length} high-stress task(s):</b><br>
+          <ul style="margin:0.3rem 0; padding-left:1.2rem; font-size:0.8rem; color:var(--text-tertiary)">
+            ${deferredNames.map(name => `<li>${name}</li>`).join('')}
+          </ul>
+        </div>`;
+      }
+    }
+    showAiSuggestion({ title: data.title, message: aiMsg });
+    
+    // Show Central Modal for Scheduling Changes
+    let resultHtml = `<p>${data.message || 'Schedule optimized based on your stress.'}</p>`;
+    if (data.defer && data.defer.length > 0) {
+      const deferredNames = data.defer.map(id => tasks.find(t => t.id == id)?.title).filter(Boolean);
+      if (deferredNames.length > 0) {
+        resultHtml += `
+          <div class="deferred-list">
+            <h4><i class="fas fa-pause-circle"></i> Tasks Deferred by AI:</h4>
+            <ul>
+              ${deferredNames.map(name => `<li>${name}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      }
+    }
+    openAiResultModal(data.title || 'Day Personalised', resultHtml, 'fa-wand-magic-sparkles');
+
+    document.getElementById('aiSuggestion')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
     if (data.order) {
       lastAiOrder = data.order;
       reorderTasks(data.order);
@@ -304,10 +356,25 @@ async function analyzeStress() {
 }
 window.analyzeStress = analyzeStress;
 
+// ── AI RESULT MODAL HELPERS ───────────────────────────
+function openAiResultModal(title, html, iconClass = 'fa-sparkles') {
+  document.getElementById('aiResultTitle').textContent = title;
+  document.getElementById('aiResultContent').innerHTML = html;
+  const iconEl = document.getElementById('aiResultIcon');
+  if (iconEl) iconEl.innerHTML = `<i class="fas ${iconClass}"></i>`;
+  document.getElementById('aiResultModal').classList.add('open');
+}
+window.openAiResultModal = openAiResultModal;
+
+function closeAiResultModal() {
+  document.getElementById('aiResultModal').classList.remove('open');
+}
+window.closeAiResultModal = closeAiResultModal;
+
 // ── AI SUGGESTION ─────────────────────────────────────
 function showAiSuggestion(data) {
   document.getElementById('aiTitle').textContent = data.title || 'Your plan';
-  document.getElementById('aiMessage').textContent = data.message || '';
+  document.getElementById('aiMessage').innerHTML = data.message || ''; // Use innerHTML for formatted list
   document.getElementById('aiSuggestion').classList.add('visible');
 }
 
@@ -351,9 +418,28 @@ async function loadTasks() {
       done: t.status === 'done',
       deadline: t.deadline ? t.deadline.split('T')[0] : null
     }));
+    
+    // Fetch AI state
+    try {
+      const aiRes = await fetch(`${API}/get-ai-state?email=${encodeURIComponent(email)}`);
+      const aiData = await aiRes.json();
+      if (aiData.state) {
+        lastAiOrder = aiData.state.order;
+        deferredIds = aiData.state.defer;
+        currentStressLevel = aiData.state.stress_used;
+        updateStressBadge(currentStressLevel);
+        updateStressStats(currentStressLevel);
+        updateBackgroundByStress(currentStressLevel);
+        // Apply AI suggestions to UI if they exist
+        if (aiData.state.title) {
+          showAiSuggestion({ title: aiData.state.title, message: aiData.state.message });
+        }
+      }
+    } catch (err) { console.error('Error loading AI state:', err); }
+
   } catch {}
-  renderTasks();
-  renderScheduleTable();
+  renderTasks(lastAiOrder);
+  renderScheduleTable(lastAiOrder);
 }
 
 function renderTasks(orderedIds) {
