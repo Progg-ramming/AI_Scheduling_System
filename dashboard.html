@@ -114,15 +114,15 @@
 }
 .weekly-rec-card p { font-size:.83rem;color:var(--text2);line-height:1.6;margin:0; }
 
-/* ── AI RESULT MODAL (Earthy Pastel Theme) ── */
+/* ── AI RESULT MODAL (Blue Theme) ── */
 .ai-result-box {
   text-align: center;
   padding: 2.5rem 2rem;
   max-width: 480px;
-  background: rgba(235, 222, 192, 0.95) !important; /* Fennel Base with transparency */
+  background: var(--card) !important; /* Blue-themed dark card */
   backdrop-filter: blur(15px) !important;
-  border: 2px solid var(--primary); /* Olive border */
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  border: 2px solid var(--primary); /* Blue border */
+  box-shadow: 0 20px 40px rgba(129,140,248,0.2);
   border-radius: 24px !important;
 }
 .ai-result-icon {
@@ -136,45 +136,45 @@
   justify-content: center;
   font-size: 1.8rem;
   margin: 0 auto 1.5rem;
-  box-shadow: 0 8px 16px rgba(181, 201, 154, 0.3);
+  box-shadow: 0 8px 16px rgba(129,140,248,0.3);
 }
 .ai-result-box h2 {
   font-family: 'Playfair Display', serif;
   font-size: 1.8rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text);
   margin-bottom: 0.8rem;
 }
 .ai-result-content {
   font-size: 1rem;
   line-height: 1.6;
-  color: #3D3D3D; /* High visibility grey */
+  color: var(--text2); /* Light text for dark background */
   margin-bottom: 1.5rem;
 }
 .ai-result-stat {
   display: flex;
   justify-content: space-between;
   padding: 0.9rem 1.2rem;
-  background: #FFFBE6; /* Milky Pearl accent */
-  border: 1px solid rgba(0,0,0,0.05);
+  background: rgba(129,140,248,0.15); /* Blue-dim accent */
+  border: 1px solid rgba(129,140,248,0.3);
   border-radius: 12px;
   margin-bottom: 0.6rem;
   font-size: 0.95rem;
-  color: var(--text-primary);
+  color: var(--text);
   font-weight: 600;
 }
-.ai-result-stat b { color: var(--green); }
+.ai-result-stat b { color: var(--accent); }
 .deferred-list {
   text-align: left;
   margin-top: 1.2rem;
-  background: #F9DADB; /* Soft Peach accent */
+  background: rgba(129,140,248,0.12); /* Blue-dim accent */
   padding: 1.25rem;
   border-radius: 16px;
-  border: 1px solid rgba(201, 107, 90, 0.2);
+  border: 1px solid rgba(129,140,248,0.25);
 }
 .deferred-list h4 { 
   font-size: 0.9rem; 
-  color: #A04030; 
+  color: var(--accent);
   margin-bottom: 0.6rem; 
   font-weight: 700;
   display: flex;
@@ -185,7 +185,7 @@
   margin: 0; 
   padding-left: 1.4rem; 
   font-size: 0.85rem; 
-  color: #4A4A4A; 
+  color: var(--text2); 
 }
 .deferred-list li { margin-bottom: 0.3rem; }
 
