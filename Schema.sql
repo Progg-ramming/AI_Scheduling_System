@@ -54,7 +54,6 @@ CREATE TABLE IF NOT EXISTS tasks_logs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-<<<<<<< HEAD
 -- 5. CATEGORIES TABLE
 CREATE TABLE IF NOT EXISTS categories (
     id SERIAL PRIMARY KEY,
@@ -64,21 +63,13 @@ CREATE TABLE IF NOT EXISTS categories (
     icon TEXT,
     color TEXT,
     border TEXT,
-    original_cat_id TEXT, -- Tracks if this replaced a default category
+    original_cat_id TEXT,         -- Tracks if this replaced a default category
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- For recency sorting
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_email, cat_id)
 );
 
--- 1. Tracking for renamed defaults
-ALTER TABLE categories ADD COLUMN IF NOT EXISTS original_cat_id TEXT;
-
--- 2. Recency sorting (Move to Top feature)
-ALTER TABLE categories ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
-
-
-=======
--- 5. USER PERSONALIZATION (Weights & Models)
+-- 6. USER PERSONALIZATION (Weights & Models)
 CREATE TABLE IF NOT EXISTS user_personalization (
     user_email VARCHAR(100) PRIMARY KEY REFERENCES users(email) ON DELETE CASCADE,
     weights JSONB NOT NULL,
@@ -88,10 +79,13 @@ CREATE TABLE IF NOT EXISTS user_personalization (
     last_ai_title TEXT,
     last_ai_message TEXT,
     last_stress_used REAL,
+    last_face_emotion TEXT,
+    last_voice_emotion TEXT,
+    last_video_url TEXT,
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 6. USER SCAN STATS (Personalization History)
+-- 7. USER SCAN STATS (Personalization History)
 CREATE TABLE IF NOT EXISTS user_scan_stats (
     id SERIAL PRIMARY KEY,
     user_email VARCHAR(100) REFERENCES users(email) ON DELETE CASCADE,
@@ -110,7 +104,6 @@ CREATE TABLE IF NOT EXISTS user_scan_stats (
 );
 
 -- ══════════════════════════════════════════════════════════════════════════
->>>>>>> 8f03542 (db fix- connected python to database)
 -- Migrations / Fixes for existing databases:
 -- ══════════════════════════════════════════════════════════════════════════
 
@@ -137,3 +130,29 @@ BEGIN
         ALTER TABLE tasks ADD COLUMN category TEXT DEFAULT 'other';
     END IF;
 END $$;
+
+-- Ensure original_cat_id exists in categories
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='categories' AND column_name='original_cat_id') THEN
+        ALTER TABLE categories ADD COLUMN original_cat_id TEXT;
+    END IF;
+END $$;
+
+-- Ensure updated_at exists in categories
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='categories' AND column_name='updated_at') THEN
+        ALTER TABLE categories ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+    END IF;
+END $$;
+
+-- Ensure user_personalization extra columns exist for older DBs
+ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_ai_order JSONB;
+ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_deferred_ids JSONB;
+ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_ai_title TEXT;
+ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_ai_message TEXT;
+ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_stress_used REAL;
+ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_face_emotion TEXT;
+ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_voice_emotion TEXT;
+ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_video_url TEXT;

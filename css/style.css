@@ -185,6 +185,7 @@ a:hover { color: var(--primary); }
   display: flex; align-items: center; gap: .6rem;
 }
 .modal-box h3 i { color: var(--primary); }
+.ai-result-box { background: var(--card2) !important; border-color: var(--primary-dim) !important; }
 .modal-close {
   position: absolute; top: 1rem; right: 1rem;
   background: none; border: none; color: var(--text3);
@@ -585,7 +586,7 @@ a:hover { color: var(--primary); }
 .analyze-btn:hover { opacity: .88; transform: translateY(-1px); }
 .analyze-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 .ai-suggestion {
-  display: none; background: var(--card); border: 1px solid var(--primary-dim);
+  display: none; background: var(--primary-dim); border: 1px solid var(--primary);
   border-left: 4px solid var(--primary); border-radius: var(--r);
   padding: 1.25rem 1.5rem; margin-bottom: 1.5rem;
   animation: fadeUp .3s ease;

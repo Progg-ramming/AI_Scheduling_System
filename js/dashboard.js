@@ -6,20 +6,21 @@ const user = JSON.parse(localStorage.getItem('user') || 'null');
 if (!user) { window.location.href = 'login.html'; }
 else {
   const name = user.name || user.full_name || 'User';
-  document.getElementById('sidebarName').textContent = name;
-  document.getElementById('sidebarAvatar').textContent = name.charAt(0).toUpperCase();
+  const sidebarName = document.getElementById('sidebarName');
+  if (sidebarName) sidebarName.textContent = name;
+  const sidebarAvatar = document.getElementById('sidebarAvatar');
+  if (sidebarAvatar) sidebarAvatar.textContent = name.charAt(0).toUpperCase();
+  const topbarAvatar = document.getElementById('topbarAvatar');
+  if (topbarAvatar) topbarAvatar.textContent = name.charAt(0).toUpperCase();
 }
 
-// ── OPEN MODEL PROFILE PAGE ───────────────────────────
-function openModelProfile() {
-    const email = user?.email || localStorage.getItem('email') || 'anonymous';
-    window.location.href = '/model-profile?uid=' + encodeURIComponent(email);
-}
-window.openModelProfile = openModelProfile;
+
 
 const h = new Date().getHours();
-document.getElementById('timeGreet').textContent = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
-document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'});
+const timeGreet = document.getElementById('timeGreet');
+if (timeGreet) timeGreet.textContent = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
+const todayDate = document.getElementById('todayDate');
+if (todayDate) todayDate.textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'});
 
 document.getElementById('logoutBtn').addEventListener('click', () => {
   localStorage.removeItem('user'); localStorage.removeItem('email');
@@ -336,7 +337,9 @@ const data = await res.json();
       <span style="color:var(--green);font-weight:700;font-size:1.05rem;">→ Combined Stress: ${combined}/100 — ${STRESS_LABELS[Math.min(combined,100)] || ''}</span>
       ${lastVideoUrl ? '<br><small style="color:var(--green)">✓ Video report stored</small>' : ''}
     `;
+    currentStressLevel = combined;
     updateStressStats(combined);
+    updateBackgroundByStress(combined);
     detectionSource = 'face_voice_scan';
     lastFaceEmotion = faceTag;
     lastVoiceEmotion = voiceTag;
@@ -363,6 +366,23 @@ const data = await res.json();
   document.getElementById('scanStopBtn').style.display = 'none';
   combinedVoiceBlob = null;
   combinedVideoBlob = null;
+
+  // Always log the scan so Analytics reflects every capture, even without Analyze
+  try {
+    const scanEmail = user?.email || localStorage.getItem('email') || '';
+    await fetch(`${API}/log-stress`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: scanEmail,
+        stressLevel: currentStressLevel,
+        source: 'face_voice_scan',
+        faceEmotion: lastFaceEmotion,
+        voiceEmotion: lastVoiceEmotion,
+        note: '', videoUrl: lastVideoUrl
+      })
+    });
+    loadRecentActivity();
+  } catch {}
 }
 window.captureCombined = captureCombined;
 
@@ -382,7 +402,14 @@ async function analyzeStress() {
   try {
     const res = await fetch(`${API}/analyze`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stressLevel: currentStressLevel, note, userEmail: email })
+      body: JSON.stringify({ 
+        stressLevel: currentStressLevel, 
+        note, 
+        userEmail: email,
+        faceEmotion: lastFaceEmotion,
+        voiceEmotion: lastVoiceEmotion,
+        videoUrl: lastVideoUrl
+      })
     });
     const data = await res.json();
     
@@ -443,6 +470,7 @@ async function analyzeStress() {
 
   updateStressBadge(currentStressLevel);
   updateStressStats(currentStressLevel);
+  updateBackgroundByStress(currentStressLevel);
 
   // Log stress
   try {
@@ -506,6 +534,13 @@ function updateStressStats(level) {
   document.getElementById('statStressSub').textContent = STRESS_LABELS[Math.min(level, 100)] || '';
 }
 
+// ── BACKGROUND STRESS TINT ────────────────────────────
+function updateBackgroundByStress(level) {
+  const root = document.documentElement;
+  root.style.setProperty('--bg', '#0f172a');
+}
+window.updateBackgroundByStress = updateBackgroundByStress;
+
 // ── TASKS ─────────────────────────────────────────────
 let tasks = [];
 
@@ -536,16 +571,16 @@ try {
     lastAiOrder = aiData.state.order;
     deferredIds = aiData.state.defer;
     currentStressLevel = aiData.state.stress_used;
+    lastFaceEmotion = aiData.state.face_emotion;
+    lastVoiceEmotion = aiData.state.voice_emotion;
+    lastVideoUrl = aiData.state.video_url;
 
     updateStressBadge(currentStressLevel);
     updateStressStats(currentStressLevel);
     updateBackgroundByStress(currentStressLevel);
 
     if (aiData.state.title) {
-      showAiSuggestion({
-        title: aiData.state.title,
-        message: aiData.state.message
-      });
+      showAiSuggestion({ title: aiData.state.title, message: aiData.state.message });
     }
   }
 } catch (err) {
@@ -1648,7 +1683,17 @@ loadTasks().then(() => {
   loadCategories(); // Integrated category loading
   initCalendar(); 
   loadRecentActivity(); 
-  renderCategoryGrid(); 
+  renderCategoryGrid();
+
+  // Open requested panel or default to dashboard
+  const params = new URLSearchParams(window.location.search);
+  const requestedPanel = params.get('panel') || 'dashboard';
+  showPanel(requestedPanel);
+
+  // If we arrived with a panel param, clear it from URL so a manual refresh lands on dashboard
+  if (params.has('panel')) {
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
 });
 updateSlider(40);
 updateSmartScheduling();
@@ -1656,69 +1701,182 @@ updateSmartScheduling();
 // ── CHART.JS PROGRESS TRACKING ────────────────────────
 let barChartInstance = null;
 let donutChartInstance = null;
-let polarChartInstance = null;
+let radarChartInstance = null;
 
 async function renderChart() {
   if (barChartInstance)   { barChartInstance.destroy();   barChartInstance = null; }
   if (donutChartInstance) { donutChartInstance.destroy(); donutChartInstance = null; }
-  if (polarChartInstance) { polarChartInstance.destroy(); polarChartInstance = null; }
+  if (radarChartInstance) { radarChartInstance.destroy(); radarChartInstance = null; }
 
-  const scale = document.getElementById('chartTimeScale')?.value || 'week';
-  const days  = scale === 'week' ? 7 : 30;
+  const scale = document.getElementById('chartTimeScale')?.value || 'past_week';
   const today = new Date();
   const email = user?.email || localStorage.getItem('email') || '';
 
+  const toYMD = date => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+  const cloneDate = date => new Date(date.getTime());
+
+  // ── Fetch stress logs first so view_all can use them for start-date detection ──
+  const logDays = scale === 'view_all' ? 3650 : (scale === 'past_month' || scale === 'this_month') ? 62 : 28;
   let stressLogs = [];
   try {
-    const r = await fetch(`${API}/stress-logs?email=${encodeURIComponent(email)}&days=${days}`);
+    const r = await fetch(`${API}/stress-logs?email=${encodeURIComponent(email)}&days=${logDays}`);
     const d = await r.json();
     stressLogs = d.logs || [];
   } catch {}
 
+  // ── Date range calculation ─────────────────────────────────────────────────
+  let currentStart = cloneDate(today);
+  let rangeDays = 7;
+
+  if (scale === 'past_week') {
+    // Mon–Sun of last week
+    const weekDay = (today.getDay() + 6) % 7; // 0 = Monday
+    currentStart.setDate(today.getDate() - weekDay - 7);
+    rangeDays = 7;
+
+  } else if (scale === 'this_week') {
+    // Monday of current week → today
+    const weekDay = (today.getDay() + 6) % 7;
+    currentStart.setDate(today.getDate() - weekDay);
+    rangeDays = Math.floor((today - currentStart) / 86400000) + 1;
+
+  } else if (scale === 'past_month') {
+    // Full previous calendar month (e.g. all of April when in May)
+    currentStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const firstOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    rangeDays = Math.floor((firstOfThisMonth - currentStart) / 86400000);
+
+  } else if (scale === 'this_month') {
+    // 1st of current month → today
+    currentStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    rangeDays = today.getDate();
+
+  } else if (scale === 'view_all') {
+    // Collect ALL possible date hints: created_at, deadline, AND stress log dates
+    const taskDates = tasks.flatMap(t => [
+      t.created_at ? new Date(t.created_at) : null,
+      t.deadline   ? new Date(t.deadline)   : null
+    ].filter(Boolean));
+    const logDates = stressLogs.map(l => new Date(l.logged_at));
+    const allDates = [...taskDates, ...logDates].filter(d => !isNaN(d.getTime()));
+    if (allDates.length > 0) {
+      currentStart = new Date(Math.min(...allDates.map(d => d.getTime())));
+      currentStart.setHours(0, 0, 0, 0);
+    } else {
+      currentStart.setFullYear(today.getFullYear() - 1);
+    }
+    rangeDays = Math.floor((today - currentStart) / 86400000) + 1;
+  }
+
+  // Comparison window (same-length period immediately before currentStart) — used for Improvement KPI
+  const compareEnd   = cloneDate(currentStart);
+  compareEnd.setDate(currentStart.getDate() - 1);
+  const compareStart = cloneDate(compareEnd);
+  compareStart.setDate(compareEnd.getDate() - rangeDays + 1);
+
   const labels = [], completedData = [], stressData = [];
   let totalDone = 0, totalPending = 0, highP = 0, medP = 0, lowP = 0;
-  let bestStress = 100, streakDays = 0, lastActive = false;
+  let bestStress = 100, streakDays = 0;
+  const currentRangeDates = [];
 
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  // All-tasks counters — used for accurate donut/polar charts
+  const allDone    = tasks.filter(t => t.done).length;
+  const allPending = tasks.filter(t => !t.done).length;
+  const allHigh    = tasks.filter(t => t.priority === 'high').length;
+  const allMed     = tasks.filter(t => (t.priority || 'medium') === 'medium').length;
+  const allLow     = tasks.filter(t => t.priority === 'low').length;
+
+  for (let i = 0; i < rangeDays; i++) {
+    const d = new Date(currentStart);
+    d.setDate(currentStart.getDate() + i);
+    if (d > today) break;
+    const ds = toYMD(d);
     labels.push(d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }));
+    currentRangeDates.push(ds);
 
-    const dayTasks    = tasks.filter(t => t.deadline && t.deadline.split('T')[0] === ds);
-    const dayDone     = dayTasks.filter(t => t.done).length;
-    totalDone    += dayDone;
+    const dayTasks = tasks.filter(t => t.deadline && t.deadline.split('T')[0] === ds);
+    const dayDone = dayTasks.filter(t => t.done).length;
+    totalDone += dayDone;
     totalPending += dayTasks.filter(t => !t.done).length;
-    dayTasks.forEach(t => { if(t.priority==='high') highP++; else if(t.priority==='low') lowP++; else medP++; });
+    dayTasks.forEach(t => {
+      if (t.priority === 'high') highP++;
+      else if (t.priority === 'low') lowP++;
+      else medP++;
+    });
     completedData.push(dayDone);
 
     const dayLogs = stressLogs.filter(l => {
       const ld = new Date(l.logged_at);
-      return `${ld.getFullYear()}-${String(ld.getMonth()+1).padStart(2,'0')}-${String(ld.getDate()).padStart(2,'0')}` === ds;
+      return toYMD(ld) === ds;
     });
+
     if (dayLogs.length > 0) {
-      const avg = dayLogs.reduce((s,l) => s + l.stress_level, 0) / dayLogs.length;
+      const avg = dayLogs.reduce((sum, l) => sum + l.stress_level, 0) / dayLogs.length;
       stressData.push(parseFloat(avg.toFixed(1)));
       if (avg < bestStress) bestStress = Math.round(avg);
-      if (i <= 6) { if (dayLogs.length > 0) { if (lastActive || i === 6) streakDays++; lastActive = true; } else lastActive = false; }
     } else {
       stressData.push(null);
     }
   }
 
-  // KPI updates
-  const completionRate = (totalDone + totalPending) > 0 ? Math.round(totalDone / (totalDone + totalPending) * 100) : 0;
-  const recentStress   = stressLogs.slice(0, Math.ceil(stressLogs.length/2));
-  const olderStress    = stressLogs.slice(Math.ceil(stressLogs.length/2));
-  const recentAvg  = recentStress.length > 0 ? recentStress.reduce((s,l)=>s+l.stress_level,0)/recentStress.length : 0;
-  const olderAvg   = olderStress.length > 0  ? olderStress.reduce((s,l)=>s+l.stress_level,0)/olderStress.length  : recentAvg;
-  const improvement = olderAvg > 0 ? Math.round(((olderAvg - recentAvg) / olderAvg) * 100) : 0;
+  // Streak: consecutive days with stress logs ending today inside current range.
+  for (let i = currentRangeDates.length - 1; i >= 0; i--) {
+    const ds = currentRangeDates[i];
+    const dayLogs = stressLogs.some(l => toYMD(new Date(l.logged_at)) === ds);
+    if (dayLogs) streakDays++; else break;
+  }
 
-  document.getElementById('pkpi-streak').textContent      = streakDays + ' days';
-  document.getElementById('pkpi-best').textContent        = bestStress < 100 ? bestStress + '/100' : '—';
-  document.getElementById('pkpi-completion').textContent  = completionRate + '%';
-  document.getElementById('pkpi-improvement').textContent = improvement > 0 ? '+' + improvement + '%' : improvement + '%';
-  document.getElementById('pkpi-improvement').style.color = improvement > 0 ? 'var(--green)' : improvement < 0 ? 'var(--red)' : 'var(--text2)';
+  const currentLogs = stressLogs.filter(l => {
+    const ds = toYMD(new Date(l.logged_at));
+    return ds >= toYMD(currentStart) && ds <= toYMD(today);
+  });
+  const previousLogs = stressLogs.filter(l => {
+    const ds = toYMD(new Date(l.logged_at));
+    return ds >= toYMD(compareStart) && ds <= toYMD(compareEnd);
+  });
+
+  // ── KPI computations (all scoped to the selected period) ─────────────────
+  const periodLabels = {
+    this_week:  'this week',
+    this_month: 'this month',
+    past_week:  'last week',
+    past_month: 'last month',
+    view_all:   'all time'
+  };
+  const periodLabel = periodLabels[scale] || 'period';
+
+  // Average stress for the selected period
+  const avgStress = currentLogs.length > 0
+    ? Math.round(currentLogs.reduce((s, l) => s + l.stress_level, 0) / currentLogs.length)
+    : null;
+
+  // Completion: use tasks with deadlines in this period; fall back to all tasks if none
+  const rangeCompletion = (totalDone + totalPending) > 0
+    ? Math.round(totalDone / (totalDone + totalPending) * 100)
+    : (allDone + allPending) > 0
+      ? Math.round(allDone / (allDone + allPending) * 100)
+      : 0;
+
+  const recentAvg   = currentLogs.length  > 0 ? currentLogs.reduce((s, l)  => s + l.stress_level, 0) / currentLogs.length  : 0;
+  const previousAvg = previousLogs.length > 0 ? previousLogs.reduce((s, l) => s + l.stress_level, 0) / previousLogs.length : recentAvg;
+  // Improvement: only show a real % when there is prior-period data to compare
+  const improvement = (previousAvg > 0 && recentAvg > 0)
+    ? Math.round(((previousAvg - recentAvg) / previousAvg) * 100)
+    : null;
+
+  document.getElementById('pkpi-streak').textContent     = streakDays + ' days';
+  document.getElementById('pkpi-best').textContent       = avgStress !== null ? avgStress + '/100' : '—';
+  const bestSub = document.getElementById('pkpi-best-sub');
+  if (bestSub) bestSub.textContent                       = 'avg ' + periodLabel;
+  document.getElementById('pkpi-completion').textContent = rangeCompletion + '%';
+  const impEl = document.getElementById('pkpi-improvement');
+  if (improvement === null) {
+    impEl.textContent = '—';
+    impEl.style.color = 'var(--text2)';
+  } else {
+    impEl.textContent = improvement > 0 ? '+' + improvement + '%' : improvement + '%';
+    impEl.style.color = improvement > 0 ? 'var(--green)' : improvement < 0 ? 'var(--red)' : 'var(--text2)';
+  }
 
   Chart.defaults.color = '#8b98a5';
   Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
@@ -1727,6 +1885,23 @@ async function renderChart() {
   const ctxDonut = document.getElementById('activityDonutChart');
   const ctxPolar = document.getElementById('priorityPolarChart');
   if (!ctxBar) return;
+
+  // ── Horizontal scroll for view_all ──────────────────
+  const barWrap = document.getElementById('barChartScrollWrap');
+  if (barWrap) {
+    if (scale === 'view_all' && labels.length > 20) {
+      const minW = Math.max(900, labels.length * 44);
+      barWrap.style.overflowX = 'auto';
+      barWrap.style.height    = '260px';
+      ctxBar.style.minWidth   = minW + 'px';
+      ctxBar.style.width      = minW + 'px';
+    } else {
+      barWrap.style.overflowX = '';
+      barWrap.style.height    = '';
+      ctxBar.style.minWidth   = '';
+      ctxBar.style.width      = '';
+    }
+  }
 
   const gradRed = ctxBar.getContext('2d').createLinearGradient(0,0,0,300);
   gradRed.addColorStop(0,'rgba(248,113,113,0.8)'); gradRed.addColorStop(1,'rgba(248,113,113,0.05)');
@@ -1755,7 +1930,8 @@ async function renderChart() {
   });
 
   if (ctxDonut) {
-    const d1 = totalDone || 0, d2 = totalPending || 0;
+    // Use ALL tasks so the donut always reflects real completion state
+    const d1 = allDone || 0, d2 = allPending || 0;
     const pct = (d1+d2) > 0 ? Math.round(d1/(d1+d2)*100) : 0;
     const centerText = {
       id: 'center', beforeDraw(chart) {
@@ -1781,26 +1957,68 @@ async function renderChart() {
     });
   }
 
-  if (ctxPolar) {
-    if(highP===0&&medP===0&&lowP===0) medP=1;
-    polarChartInstance = new Chart(ctxPolar, {
-      type: 'polarArea',
+  const ctxRadar = document.getElementById('workloadRadarChart');
+  if (ctxRadar) {
+    const total = (allDone + allPending) || 1;
+    const completionRate = Math.round((allDone / total) * 100);
+    const stressControl  = 100 - (avgStress || 40);
+    const priorityFocus  = Math.round((allHigh / total) * 100);
+    const consistency    = Math.min((streakDays || 0) * 20, 100);
+    const activityLevel  = Math.min(total * 10, 100);
+
+    radarChartInstance = new Chart(ctxRadar, {
+      type: 'radar',
       data: {
-        labels: ['High','Medium','Low'],
-        datasets: [{ data: [highP, medP, lowP], backgroundColor: ['rgba(248,113,113,.75)','rgba(251,191,36,.75)','rgba(74,222,128,.75)'], borderWidth: 1, borderColor: '#1e293b' }]
+        labels: ['Completion','Stress Control','Priority','Consistency','Activity'],
+        datasets: [{
+          label: 'Performance Metrics',
+          data: [completionRate, stressControl, priorityFocus, consistency, activityLevel],
+          backgroundColor: 'rgba(129,140,248,0.2)',
+          borderColor: '#818cf8',
+          pointBackgroundColor: '#818cf8',
+          pointBorderColor: '#fff',
+          pointHoverBackgroundColor: '#fff',
+          pointHoverBorderColor: '#818cf8',
+          borderWidth: 2
+        }]
       },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend:{ position:'bottom', labels:{ usePointStyle:true } } }, scales:{ r:{ grid:{ color:'rgba(255,255,255,.03)' }, ticks:{ display:false } } } }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          r: {
+            angleLines: { color: 'rgba(255,255,255,0.05)' },
+            grid: { color: 'rgba(255,255,255,0.05)' },
+            pointLabels: { color: 'rgba(255,255,255,0.5)', font: { size: 10 } },
+            ticks: { display: false, stepSize: 20 },
+            suggestedMin: 0,
+            suggestedMax: 100
+          }
+        },
+        plugins: { legend: { display: false } }
+      }
     });
   }
 
-  // Weekly recommendations
-  renderWeeklyRecommendations(stressLogs, completionRate, improvement);
+  // Weekly recommendations — pass period-filtered logs and correct completion rate
+  renderWeeklyRecommendations(currentLogs, rangeCompletion, improvement ?? 0);
 }
 window.renderChart = renderChart;
 
 function renderWeeklyRecommendations(stressLogs, completionRate, improvement) {
   const el = document.getElementById('weeklyRecs');
+  const titleEl = document.getElementById('weeklyRecsTitle');
   if (!el) return;
+
+  const scale = document.getElementById('chartTimeScale')?.value || 'past_week';
+  const periodLabels = {
+    this_week:  'This Week',
+    this_month: 'This Month',
+    past_week:  'Last Week',
+    past_month: 'Last Month',
+    view_all:   'All Time'
+  };
+  if (titleEl) titleEl.innerHTML = `<i class="fas fa-star" style="color:var(--yellow);margin-right:.4rem;"></i>Insights for ${periodLabels[scale] || 'Period'}`;
 
   const avgStress = stressLogs.length > 0 ? Math.round(stressLogs.reduce((s,l) => s+l.stress_level,0)/stressLogs.length) : 40;
   const recs = [];

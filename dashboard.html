@@ -119,10 +119,10 @@
   text-align: center;
   padding: 2.5rem 2rem;
   max-width: 480px;
-  background: var(--card) !important; /* Blue-themed dark card */
-  backdrop-filter: blur(15px) !important;
-  border: 2px solid var(--primary); /* Blue border */
-  box-shadow: 0 20px 40px rgba(129,140,248,0.2);
+  background: rgba(15, 23, 42, 0.90) !important;
+  backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(129, 140, 248, 0.22);
+  box-shadow: 0 24px 60px rgba(9, 18, 38, 0.45);
   border-radius: 24px !important;
 }
 .ai-result-icon {
@@ -136,7 +136,7 @@
   justify-content: center;
   font-size: 1.8rem;
   margin: 0 auto 1.5rem;
-  box-shadow: 0 8px 16px rgba(129,140,248,0.3);
+  box-shadow: 0 12px 24px rgba(27, 58, 127, 0.25);
 }
 .ai-result-box h2 {
   font-family: 'Playfair Display', serif;
@@ -147,47 +147,49 @@
 }
 .ai-result-content {
   font-size: 1rem;
-  line-height: 1.6;
-  color: var(--text2); /* Light text for dark background */
+  line-height: 1.7;
+  color: var(--text2);
   margin-bottom: 1.5rem;
+  text-align: left;
 }
 .ai-result-stat {
   display: flex;
   justify-content: space-between;
   padding: 0.9rem 1.2rem;
-  background: rgba(129,140,248,0.15); /* Blue-dim accent */
-  border: 1px solid rgba(129,140,248,0.3);
+  background: rgba(21, 30, 58, 0.92);
+  border: 1px solid rgba(129, 140, 248, 0.18);
   border-radius: 12px;
   margin-bottom: 0.6rem;
   font-size: 0.95rem;
-  color: var(--text);
+  color: var(--text2);
   font-weight: 600;
 }
-.ai-result-stat b { color: var(--accent); }
+.ai-result-stat b { color: var(--green); }
 .deferred-list {
   text-align: left;
   margin-top: 1.2rem;
-  background: rgba(129,140,248,0.12); /* Blue-dim accent */
-  padding: 1.25rem;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.20);
   border-radius: 16px;
-  border: 1px solid rgba(129,140,248,0.25);
+  padding: 1rem;
+  color: var(--text2);
 }
-.deferred-list h4 { 
-  font-size: 0.9rem; 
-  color: var(--accent);
-  margin-bottom: 0.6rem; 
+.deferred-list h4 {
+  font-size: 0.95rem;
+  color: var(--text);
+  margin-bottom: 0.6rem;
   font-weight: 700;
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
-.deferred-list ul { 
-  margin: 0; 
-  padding-left: 1.4rem; 
-  font-size: 0.85rem; 
-  color: var(--text2); 
+.deferred-list ul {
+  margin: 0;
+  padding-left: 1.4rem;
+  font-size: 0.9rem;
+  color: var(--text2);
 }
-.deferred-list li { margin-bottom: 0.3rem; }
+.deferred-list li { margin-bottom: 0.4rem; }
 
 @media(max-width:900px){
   .insight-grid,.time-block-grid,.progress-kpi-row{grid-template-columns:1fr 1fr;}
@@ -307,15 +309,15 @@
     <div class="nav-section">
       <div class="nav-section-label">Insights</div>
       <div class="nav-item" onclick="showPanel('analytics')"><i class="fas fa-chart-line"></i>Analytics</div>
+      <div class="nav-item" id="navModelProfile" onclick="openModelProfile()">           
+        <i class="fas fa-chart-bar"></i>My Stress Profile
+      </div>
       <div class="nav-item" onclick="showPanel('history')"><i class="fas fa-heartbeat"></i>Stress History</div>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Account</div>
       <div class="nav-item" onclick="window.location.href='settings.html'"><i class="fas fa-cog"></i>Settings</div>
       <div class="nav-item" onclick="window.location.href='account.html'"><i class="fas fa-user-circle"></i>My Account</div>
-      <div class="nav-item" id="navModelProfile" onclick="openModelProfile()">           
-    <i class="fas fa-chart-bar"></i>My Stress Profile
-</div>
     </div>
   </nav>
   <div class="sidebar-bottom">
@@ -333,7 +335,7 @@
     <div class="topbar-left"><h1>Good <span id="timeGreet">morning</span> ✦</h1></div>
     <div class="topbar-right">
       <span class="topbar-date" id="todayDate"></span>
-      <a href="account.html" style="font-size:.82rem;color:var(--text2);"><i class="fas fa-user-circle"></i></a>
+      <div class="user-avatar" id="topbarAvatar" onclick="window.location.href='account.html'" style="cursor:pointer; width:34px; height:34px; font-size:.85rem;">?</div>
     </div>
   </div>
 
@@ -662,21 +664,24 @@
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;">
             <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;"><i class="fas fa-chart-line" style="color:var(--primary);margin-right:.5rem;"></i>Growth &amp; Progress</h2>
             <select id="chartTimeScale" onchange="renderChart()" style="background:var(--card2);color:var(--text);border:1px solid var(--border);padding:.3rem .6rem;border-radius:var(--r-sm);outline:none;">
-              <option value="week">Past Week</option>
-              <option value="month">Past Month</option>
+              <option value="this_week">This Week</option>
+              <option value="this_month">This Month</option>
+              <option value="past_week">Past Week</option>
+              <option value="past_month">Past Month</option>
+              <option value="view_all">View All</option>
             </select>
           </div>
           <!-- KPI row -->
           <div class="progress-kpi-row" id="progressKpis">
             <div class="kpi-box"><div class="kpi-val" id="pkpi-streak">—</div><div class="kpi-lbl">Day Streak</div><div class="kpi-sub" style="color:var(--yellow);">🔥 active days</div></div>
-            <div class="kpi-box"><div class="kpi-val" id="pkpi-best">—</div><div class="kpi-lbl">Best Stress</div><div class="kpi-sub" style="color:var(--green);">lowest recorded</div></div>
+            <div class="kpi-box"><div class="kpi-val" id="pkpi-best">—</div><div class="kpi-lbl">Avg Stress</div><div class="kpi-sub" id="pkpi-best-sub" style="color:var(--green);">for period</div></div>
             <div class="kpi-box"><div class="kpi-val" id="pkpi-completion">—</div><div class="kpi-lbl">Completion</div><div class="kpi-sub" style="color:var(--primary);">task rate</div></div>
             <div class="kpi-box"><div class="kpi-val" id="pkpi-improvement">—</div><div class="kpi-lbl">Improvement</div><div class="kpi-sub" style="color:var(--accent);">vs last period</div></div>
           </div>
           <!-- Charts -->
           <div class="chart-section">
             <h4><i class="fas fa-wave-square"></i>Stress Trend vs Tasks Completed</h4>
-            <div class="chart-wrap"><canvas id="activityBarChart"></canvas></div>
+            <div class="chart-wrap" id="barChartScrollWrap"><canvas id="activityBarChart"></canvas></div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:1.5rem;">
             <div style="flex:1;min-width:200px;">
@@ -687,15 +692,15 @@
             </div>
             <div style="flex:1;min-width:200px;">
               <div class="chart-section">
-                <h4><i class="fas fa-layer-group"></i>Priority Distribution</h4>
-                <div class="chart-wrap" style="height:200px;"><canvas id="priorityPolarChart"></canvas></div>
+                <h4><i class="fas fa-microchip"></i>Workload Resilience Radar</h4>
+                <div class="chart-wrap" style="height:200px;"><canvas id="workloadRadarChart"></canvas></div>
               </div>
             </div>
           </div>
         </div>
         <!-- Weekly recommendations -->
         <div class="card">
-          <h3 style="font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:1rem;"><i class="fas fa-star" style="color:var(--yellow);margin-right:.4rem;"></i>Personalised Weekly Recommendations</h3>
+          <h3 style="font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:1rem;" id="weeklyRecsTitle"><i class="fas fa-star" style="color:var(--yellow);margin-right:.4rem;"></i>Personalised Insights</h3>
           <div id="weeklyRecs">
             <div style="text-align:center;padding:2rem;color:var(--text3);font-size:.85rem;">Loading recommendations...</div>
           </div>
