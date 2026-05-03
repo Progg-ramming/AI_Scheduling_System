@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     priority VARCHAR(50) DEFAULT 'medium',
     status VARCHAR(50) DEFAULT 'pending',
     category TEXT DEFAULT 'other',
+    notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

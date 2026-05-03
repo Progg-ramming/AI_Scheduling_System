@@ -455,8 +455,14 @@ async function analyzeStress() {
     if (data.defer) {
       deferredIds = data.defer;
       document.getElementById('statDeferred').textContent = deferredIds.length;
+      
+      // ✨ Show Deferred button if we have tasks
+      const defBtn = document.getElementById('deferredBtn');
+      if (defBtn) defBtn.style.display = deferredIds.length > 0 ? 'inline-flex' : 'none';
+      
       renderTasks(lastAiOrder);
       renderScheduleTable(lastAiOrder);
+      if (document.getElementById('deferredTasksView')?.style.display !== 'none') renderDeferredTasks();
     }
   } catch {
     const stressed = currentStressLevel >= 50;
@@ -547,20 +553,21 @@ let tasks = [];
 async function loadTasks() {
   const email = user?.email || localStorage.getItem('email') || '';
   try {
-    const res = await fetch(`${API}/get-tasks?email=${encodeURIComponent(email)}`);
+    const res = await fetch(`${API}/get-tasks?email=${encodeURIComponent(email)}&_cb=${Date.now()}`);
     const data = await res.json();
-const serverTasks = data.tasks || data || [];
-console.log(`[Persistence] Loaded ${serverTasks.length} tasks from server`);
+    console.log('[Persistence] RAW DATA FROM SERVER:', JSON.stringify(data.tasks?.[0] || data?.[0] || 'NONE'));
+    const serverTasks = data.tasks || data || [];
 
-tasks = serverTasks.map(t => {
-  if (!t.category) console.warn(`[Persistence] Task ${t.id} ("${t.title}") has NO category. Defaulting to 'other'.`);
-  return {
-    ...t,
-    category: t.category || 'other',
-    done: t.status === 'done',
-    deadline: t.deadline ? t.deadline.split('T')[0] : null // safer format
-  };
-});
+  tasks = serverTasks.map(t => {
+    if (t.notes) console.log(`[Persistence] Task ${t.id} has notes: "${t.notes}"`);
+    return {
+      ...t,
+      category: t.category || 'other',
+      done: t.status === 'done',
+      deadline: t.deadline ? t.deadline.split('T')[0] : null,
+      notes: t.notes || ''
+    };
+  });
 
 // Fetch AI state
 try {
@@ -582,6 +589,10 @@ try {
     if (aiData.state.title) {
       showAiSuggestion({ title: aiData.state.title, message: aiData.state.message });
     }
+    
+    // ✨ Show Deferred button if we have tasks
+    const defBtn = document.getElementById('deferredBtn');
+    if (defBtn) defBtn.style.display = deferredIds.length > 0 ? 'inline-flex' : 'none';
   }
 } catch (err) {
   console.error('Error loading AI state:', err);
@@ -625,7 +636,10 @@ function renderTasks(orderedIds) {
         <div class="task-title ${t.done ? 'striked' : ''}">${t.title || 'Untitled'}
           ${isReordered && !t.done ? '<span class="ai-order-badge"><i class="fas fa-sparkles"></i>AI</span>' : ''}
         </div>
-        <div class="task-meta"><span><i class="fas fa-calendar" style="margin-right:3px;opacity:.6;"></i>${t.deadline || 'No deadline'}</span></div>
+        <div class="task-meta">
+          <span><i class="fas fa-calendar" style="margin-right:3px;opacity:.6;"></i>${t.deadline || 'No deadline'}</span>
+        </div>
+        ${t.notes ? `<div class="task-notes-preview"><i class="fas fa-sticky-note"></i>${t.notes}</div>` : ''}
       </div>
       <span class="priority-badge ${pClass}">${pLabel}</span>
       ${isDeferred ? '<span class="badge badge-red" style="font-size:.68rem;">Deferred</span>' : ''}
@@ -964,10 +978,13 @@ function renderScheduleTable(orderedIds) {
     const isDeferred = deferredIds.map(String).includes(String(t.id));
     const isAiOrdered = orderedIds && idx < orderedIds.length;
     return `<tr class="${isDeferred ? 'deferred-row' : ''}">
-      <td>${t.title || 'Untitled'}
-        ${isAiOrdered && !t.done ? '<span class="ai-order-badge"><i class="fas fa-sparkles"></i>AI</span>' : ''}
-        ${isDeferred ? '<br><span class="badge badge-red" style="font-size:.65rem;padding:1px 4px;">AI Deferred</span>' : ''}
-        ${!currentCategory ? `<br><span class="badge badge-purple" style="font-size:.62rem;padding:1px 6px;">${getCatById(t.category||'other').icon} ${getCatById(t.category||'other').label}</span>` : ''}
+      <td>
+        <div style="font-weight:600;">${t.title || 'Untitled'}
+          ${isAiOrdered && !t.done ? '<span class="ai-order-badge"><i class="fas fa-sparkles"></i>AI</span>' : ''}
+          ${isDeferred ? '<span class="badge badge-red" style="font-size:.65rem;padding:1px 4px;margin-left:4px;">AI Deferred</span>' : ''}
+        </div>
+        ${t.notes ? `<div class="task-notes-preview"><i class="fas fa-sticky-note"></i>${t.notes}</div>` : ''}
+        ${!currentCategory ? `<div style="margin-top:8px;"><span class="badge badge-purple" style="font-size:.62rem;padding:1px 6px;">${getCatById(t.category||'other').icon} ${getCatById(t.category||'other').label}</span></div>` : ''}
       </td>
       <td style="color:var(--text2)">${t.deadline || '—'}</td>
       <td><span style="font-weight:600;color:${pColor[t.priority||'medium']}">${(t.priority||'medium').charAt(0).toUpperCase()+(t.priority||'medium').slice(1)}</span></td>
@@ -1064,11 +1081,16 @@ async function submitTask() {
 
   if (editId) {
     try {
+      const t = tasks.find(t => t.id == editId);
+      const currentStatus = t ? (t.done ? 'done' : 'pending') : 'pending';
+      
       await fetch(`${API}/update-task`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId: parseInt(editId), title, deadline, priority, status: 'pending', user_email: email, category })
+        body: JSON.stringify({ 
+          taskId: parseInt(editId), title, deadline, priority, 
+          status: currentStatus, user_email: email, category, notes: document.getElementById('taskNotes').value 
+        })
       });
-      const t = tasks.find(t => t.id == editId);
       if (t) {
         t.title = title;
         t.deadline = deadline;
@@ -1080,14 +1102,14 @@ async function submitTask() {
     } catch { showToast('Error updating task'); }
   } else {
     try {
-      console.log(`[Persistence] Adding task to category: ${category}`);
+      const notes = document.getElementById('taskNotes').value;
+      console.log(`[Persistence] Adding task with notes: "${notes || 'EMPTY'}"`);
       const res = await fetch(`${API}/add-task`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, deadline, priority, user_email: email, category })
+        body: JSON.stringify({ title, deadline, priority, user_email: email, category, notes })
       });
       const data = await res.json();
       if (data.success) {
-        const notes = document.getElementById('taskNotes').value;
         const newTask = {
           id: data.id || Date.now(),
           title,
@@ -2168,9 +2190,12 @@ function renderViewAllTasks() {
 
     return `<tr>
       <td>
-        <div style="display:flex;align-items:center;gap:.6rem;">
-          <div class="status-dot ${t.done ? 'done' : ''}" onclick="toggleTask(${t.id})"></div>
-          <span style="${t.done ? 'text-decoration:line-through;opacity:.5;' : ''}">${t.title}</span>
+        <div style="display:flex;flex-direction:column;gap:.2rem;">
+          <div style="display:flex;align-items:center;gap:.6rem;">
+            <div class="status-dot ${t.done ? 'done' : ''}" onclick="toggleTask(${t.id})"></div>
+            <span style="${t.done ? 'text-decoration:line-through;opacity:.5;' : ''}">${t.title}</span>
+          </div>
+          ${t.notes ? `<div class="task-notes-preview"><i class="fas fa-sticky-note"></i>${t.notes}</div>` : ''}
         </div>
       </td>
       <td>${deadlineDisplay}</td>
@@ -2239,9 +2264,12 @@ function renderTodayFocusTasks() {
     return `
       <tr>
         <td>
-          <div style="display:flex;align-items:center;gap:.6rem;">
-            <div class="status-dot ${t.done?'done':''}" onclick="toggleTask(${t.id})"></div>
-            <span style="${t.done?'text-decoration:line-through;opacity:.5;':''}">${t.title}</span>
+          <div style="display:flex;flex-direction:column;gap:.2rem;">
+            <div style="display:flex;align-items:center;gap:.6rem;">
+              <div class="status-dot ${t.done?'done':''}" onclick="toggleTask(${t.id})"></div>
+              <span style="${t.done?'text-decoration:line-through;opacity:.5;':''}">${t.title}</span>
+            </div>
+            ${t.notes ? `<div class="task-notes-preview"><i class="fas fa-sticky-note"></i>${t.notes}</div>` : ''}
           </div>
         </td>
         <td><span class="badge" style="background:${cat.color};color:var(--text);border:1px solid ${cat.border}">${cat.icon} ${cat.label}</span></td>
@@ -2269,10 +2297,92 @@ if (typeof renderTasks === 'function') {
     const r = _origRT(ids);
     if (document.getElementById('todayFocusView')?.style.display !== 'none') renderTodayFocusTasks();
     if (document.getElementById('viewAllTasksView')?.style.display !== 'none') renderViewAllTasks();
+    if (document.getElementById('deferredTasksView')?.style.display !== 'none') renderDeferredTasks();
     if (document.getElementById('calDateView')?.style.display !== 'none') renderCalDateTasks();
     return r;
   };
 }
+
+if (typeof toggleTask === 'function') {
+  const _origTT = toggleTask;
+  window.toggleTask = async function(id) {
+    await _origTT(id);
+    if (document.getElementById('todayFocusView')?.style.display !== 'none') renderTodayFocusTasks();
+    if (document.getElementById('viewAllTasksView')?.style.display !== 'none') renderViewAllTasks();
+    if (document.getElementById('deferredTasksView')?.style.display !== 'none') renderDeferredTasks();
+    if (document.getElementById('calDateView')?.style.display !== 'none') renderCalDateTasks();
+  };
+}
+
+// ── DEFERRED TASKS LOGIC ────────────────────────────────────────────────────
+function openDeferredTasksView() {
+  document.getElementById('catGridView').style.display = 'none';
+  document.getElementById('todayFocusView').style.display = 'none';
+  document.getElementById('catDetailView').style.display = 'none';
+  document.getElementById('viewAllTasksView').style.display = 'none';
+  document.getElementById('deferredTasksView').style.display = 'block';
+  renderDeferredTasks();
+}
+window.openDeferredTasksView = openDeferredTasksView;
+
+function closeDeferredTasksView() {
+  document.getElementById('catGridView').style.display = 'block';
+  document.getElementById('deferredTasksView').style.display = 'none';
+  renderCategoryGrid();
+}
+window.closeDeferredTasksView = closeDeferredTasksView;
+
+function renderDeferredTasks() {
+  const body = document.getElementById('deferredBody');
+  if (!body) return;
+
+  const list = tasks.filter(t => deferredIds.map(String).includes(String(t.id)));
+
+  if (list.length === 0) {
+    body.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:3rem;">
+      <i class="fas fa-clock" style="font-size:2rem;display:block;margin-bottom:1rem;opacity:.3;"></i>
+      No deferred tasks at the moment.
+    </td></tr>`;
+    return;
+  }
+
+  const todayStr = getTodayStr();
+  const pColor = { high: 'var(--red)', medium: 'var(--yellow)', low: 'var(--green)' };
+
+  body.innerHTML = list.map(t => {
+    const cat = getCatById(t.category);
+    const isOverdue = t.deadline && t.deadline < todayStr && !t.done;
+    const deadlineDisplay = t.deadline
+      ? `<span style="color:${isOverdue ? 'var(--red)' : 'var(--text2)'}">${t.deadline}${isOverdue ? ' <span style="font-size:.65rem;font-weight:600;">Overdue</span>' : ''}</span>`
+      : '<span style="color:var(--text3)">—</span>';
+
+    return `<tr>
+      <td>
+        <div style="display:flex;flex-direction:column;gap:.2rem;">
+          <div style="display:flex;align-items:center;gap:.6rem;">
+            <div class="status-dot ${t.done ? 'done' : ''}" onclick="toggleTask(${t.id})"></div>
+            <span style="${t.done ? 'text-decoration:line-through;opacity:.5;' : ''}">${t.title}</span>
+          </div>
+          ${t.notes ? `<div class="task-notes-preview"><i class="fas fa-sticky-note"></i>${t.notes}</div>` : ''}
+        </div>
+      </td>
+      <td>${deadlineDisplay}</td>
+      <td><span class="badge" style="background:${cat.color};color:var(--text);border:1px solid ${cat.border}">${cat.icon} ${cat.label}</span></td>
+      <td><span style="font-weight:600;color:${pColor[t.priority||'medium']}">${(t.priority||'medium').charAt(0).toUpperCase()+(t.priority||'medium').slice(1)}</span></td>
+      <td><span class="status-pill ${t.done ? 'done' : 'pending'}">${t.done ? 'Completed' : 'Pending'}</span></td>
+      <td style="text-align:center;">
+        <div style="display:flex;gap:.4rem;justify-content:center;">
+          <button class="btn-icon ${t.done ? 'warning' : 'success'}" onclick="toggleTask(${t.id})" title="${t.done ? 'Mark Pending' : 'Mark Complete'}">
+            <i class="fas ${t.done ? 'fa-rotate-left' : 'fa-check'}"></i>
+          </button>
+          <button class="btn-icon" onclick="openEditModal(${t.id})"><i class="fas fa-pen"></i></button>
+          <button class="btn-icon danger" onclick="deleteTask(${t.id})" title="Delete"><i class="fas fa-trash"></i></button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+window.renderDeferredTasks = renderDeferredTasks;
 
 if (typeof toggleTask === 'function') {
   const _origTT = toggleTask;

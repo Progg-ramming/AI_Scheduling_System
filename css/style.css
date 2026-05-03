@@ -453,6 +453,27 @@ a:hover { color: var(--primary); }
 .priority-medium { background: var(--yellow-dim); color: var(--yellow); }
 .priority-high   { background: var(--red-dim);    color: var(--red);    }
 
+.task-notes-preview {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 3px solid var(--primary-dim);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: var(--text2);
+  line-height: 1.4;
+  font-style: italic;
+  max-width: 100%;
+  word-wrap: break-word;
+  opacity: 0.9;
+}
+.task-notes-preview i {
+  color: var(--primary);
+  margin-right: 6px;
+  font-size: 0.75rem;
+}
+
 /* ── STRESS HERO & SLIDER ── */
 .stress-hero {
   background: var(--card); border: 1px solid var(--border);

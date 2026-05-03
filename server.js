@@ -65,6 +65,7 @@ const PYTHON_URL = 'http://127.0.0.1:5000';
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT false`);
         await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
         await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'other'`);
+        await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS notes TEXT`);
         // Ensure deadline is DATE type to avoid timezone issues
         await pool.query(`ALTER TABLE tasks ALTER COLUMN deadline TYPE DATE USING deadline::date`);
         
@@ -339,9 +340,10 @@ app.get('/get-tasks', async (req, res) => {
     if (!email) return res.status(400).json({ error: 'Email required' });
     try {
         const result = await pool.query(
-            "SELECT id, user_email, title, to_char(deadline, 'YYYY-MM-DD') as deadline, priority, status, category, created_at, updated_at FROM tasks WHERE user_email = $1 ORDER BY created_at DESC",
+            "SELECT id, user_email, title, to_char(deadline, 'YYYY-MM-DD') as deadline, priority, status, category, notes, created_at, updated_at FROM tasks WHERE user_email = $1 ORDER BY created_at DESC",
             [email]
         );
+        console.log(`[Persistence] Fetched ${result.rows.length} tasks for ${email}. First task notes: "${result.rows[0]?.notes}"`);
         res.json({ tasks: result.rows });
     } catch (err) {
         console.error('Get tasks error:', err);
@@ -355,7 +357,7 @@ app.get('/get-ai-state', async (req, res) => {
     if (!email) return res.status(400).json({ error: 'Email required' });
     try {
         const result = await pool.query(
-            'SELECT last_ai_order, last_deferred_ids, last_ai_title, last_ai_message, last_stress_used FROM user_personalization WHERE user_email = $1',
+            'SELECT last_ai_order, last_deferred_ids, last_ai_title, last_ai_message, last_stress_used, last_face_emotion, last_voice_emotion, last_video_url FROM user_personalization WHERE user_email = $1',
             [email]
         );
         if (result.rows.length === 0) {
@@ -390,13 +392,14 @@ app.get('/get-ai-state', async (req, res) => {
 
 // ─── ADD TASK ───────────────────────────────────────────────────────────────
 app.post('/add-task', async (req, res) => {
-    const { title, deadline, priority, user_email, category } = req.body;
+    const { title, deadline, priority, user_email, category, notes } = req.body;
     if (!title || !user_email) return res.status(400).json({ error: 'Title and user required' });
     try {
+        console.log(`[Persistence] Adding task for ${user_email}: "${title}" with notes: "${notes || 'EMPTY'}"`);
         const result = await pool.query(
-            `INSERT INTO tasks (user_email, title, deadline, priority, status, category)
-             VALUES ($1, $2, $3::date, $4, 'pending', $5) RETURNING id`,
-            [user_email, title, deadline, priority || 'medium', category || 'other']
+            `INSERT INTO tasks (user_email, title, deadline, priority, status, category, notes)
+             VALUES ($1, $2, $3::date, $4, 'pending', $5, $6) RETURNING id`,
+            [user_email, title, deadline || null, priority || 'medium', category || 'other', notes || '']
         );
         
         // ✨ Move category to top
@@ -414,13 +417,14 @@ app.post('/add-task', async (req, res) => {
 
 // ─── UPDATE TASK ────────────────────────────────────────────────────────────
 app.post('/update-task', async (req, res) => {
-    const { taskId, title, deadline, priority, status, user_email, category } = req.body;
+    const { taskId, title, deadline, priority, status, user_email, category, notes } = req.body;
     if (!taskId || !title || !user_email) return res.status(400).json({ error: 'Missing fields' });
     try {
+        console.log(`[Persistence] Updating task ${taskId} for ${user_email} with notes: "${notes || 'EMPTY'}"`);
         const result = await pool.query(
-            `UPDATE tasks SET title=$1, deadline=$2::date, priority=$3, status=$4, category=$5
-             WHERE id=$6 AND user_email=$7 RETURNING id`,
-            [title, deadline, priority, status || 'pending', category || 'other', taskId, user_email]
+            `UPDATE tasks SET title=$1, deadline=$2::date, priority=$3, status=$4, category=$5, notes=$6
+             WHERE id=$7 AND user_email=$8 RETURNING id`,
+            [title, deadline || null, priority, status || 'pending', category || 'other', notes || '', taskId, user_email]
         );
         if (result.rowCount === 0) return res.status(404).json({ error: 'Task not found' });
         
@@ -635,6 +639,7 @@ app.post('/analyze', async (req, res) => {
     // Call Python AI bridge
     try {
         const pyRes = await axios.post(`${PYTHON_URL}/predict`, {
+            user_id: userEmail,
             stress_level: stressLevel,
             note: note || '',
             tasks: userTasks
@@ -937,6 +942,8 @@ app.post('/delete-account', async (req, res) => {
         // 🗑️ DELETE ASSOCIATED DATA FIRST (Avoids 500 errors from constraints)
         await pool.query('DELETE FROM tasks WHERE user_email=$1', [email]);
         await pool.query('DELETE FROM stress_logs WHERE user_email=$1', [email]);
+        await pool.query('DELETE FROM categories WHERE user_email=$1', [email]);
+        // Note: user_personalization and user_scan_stats have CASCADE constraints
 
         const result = await pool.query(
             'DELETE FROM users WHERE email=$1 RETURNING email',
@@ -960,6 +967,6 @@ app.post('/delete-account', async (req, res) => {
 
 
 app.listen(PORT, () => {
-    console.log(`\nMindFlow server running at http://localhost:${PORT}`);
+    console.log(`🚀 MindFlow Server v2 (with Notes Support) running on http://localhost:${PORT}`);
     console.log('Python AI bridge should run at http://localhost:5000\n');
 });

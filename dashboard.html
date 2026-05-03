@@ -443,6 +443,7 @@
             <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;"><i class="fas fa-list-check" style="color:var(--primary);margin-right:.5rem;"></i>Schedule by Category</h2>
             <span class="today-focus-link" onclick="openTodayFocus()"><i class="fas fa-bullseye"></i> Today's Focus</span>
             <span class="today-focus-link" onclick="openViewAllTasks()"><i class="fas fa-layer-group"></i> View All Tasks</span>
+            <span class="today-focus-link" onclick="openDeferredTasksView()" id="deferredBtn" style="display:none;background:linear-gradient(135deg,rgba(239,68,68,0.15),rgba(239,68,68,0.1));border-color:rgba(239,68,68,0.3);"><i class="fas fa-clock-rotate-left" style="color:var(--red);"></i> Deferred</span>
           </div>
           <button class="btn btn-sm" onclick="openAddModal()"><i class="fas fa-plus"></i> Add Task</button>
         </div>
@@ -491,6 +492,25 @@
             <table class="schedule-table">
               <thead><tr><th>Task</th><th>Deadline</th><th>Category</th><th>Priority</th><th>Status</th><th style="text-align:center;">Actions</th></tr></thead>
               <tbody id="viewAllBody"><tr><td colspan="6" style="text-align:center;color:var(--text3);padding:2rem;">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Deferred Tasks Immersion View -->
+      <div id="deferredTasksView" style="display:none;">
+        <div class="cat-view-header">
+          <span class="cat-breadcrumb" onclick="closeDeferredTasksView()"><i class="fas fa-chevron-left"></i> All Categories</span>
+          <h2 style="font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:400;flex:1;"><i class="fas fa-clock-rotate-left" style="color:var(--red);margin-right:.5rem;"></i>Deferred by AI</h2>
+        </div>
+        <div style="background:var(--red-dim);color:var(--red);padding:.8rem;border-radius:var(--r-sm);font-size:.8rem;margin-bottom:1.25rem;border:1px solid rgba(239,68,68,0.2);">
+          <i class="fas fa-robot"></i> These tasks were deferred by MindFlow to help you manage your stress levels. Focus on your High priority tasks first.
+        </div>
+        <div class="card">
+          <div style="overflow-x:auto;">
+            <table class="schedule-table">
+              <thead><tr><th>Task</th><th>Deadline</th><th>Category</th><th>Priority</th><th>Status</th><th style="text-align:center;">Actions</th></tr></thead>
+              <tbody id="deferredBody"><tr><td colspan="6" style="text-align:center;color:var(--text3);padding:2rem;">No tasks deferred yet.</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -849,6 +869,6 @@
 <div id="toast"></div>
 <button class="fab" onclick="openAddModal()"><i class="fas fa-plus"></i></button>
 <script src="js/script.js"></script>
-<script src="js/dashboard.js"></script>
+<script src="js/dashboard.js?v=2"></script>
 </body>
 </html>
