@@ -34,3 +34,6 @@ tmp_voice_raw*
 
 # test files
 test.js
+
+
+*.db
