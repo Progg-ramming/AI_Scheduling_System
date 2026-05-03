@@ -1363,4 +1363,3 @@ box-shadow: var(--shadow-card);
   0%,100% { box-shadow: 0 2px 10px rgba(102,126,234,.2); }
   50%     { box-shadow: 0 4px 20px rgba(102,126,234,.45); }
 }
->>>>>>> 8e14f33 (Improved insights and minor bug fixes)
