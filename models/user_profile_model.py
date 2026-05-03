@@ -399,7 +399,10 @@ class UserStressProfile:
                 "source":             "database",
                 "scans_in_period":    len(rows),
                 "total_scans":        self.scan_count,
+                "days_analyzed":      days,
                 "avg_stress":         round(float(np.mean(adj_s)), 1),
+                "max_stress":         round(float(np.max(adj_s)), 1),
+                "min_stress":         round(float(np.min(adj_s)), 1),
                 "trend":              "stable",
                 "worst_hour":         max(avg_h, key=avg_h.get) if avg_h else None,
                 "best_hour":          min(avg_h, key=avg_h.get) if avg_h else None,
@@ -417,8 +420,14 @@ class UserStressProfile:
             "scan_count":          self.scan_count,
             "personalization_pct": round(pw * 100),
             "baseline":            round(w["baseline"], 1),
+            "stress_std":          round(w["stress_var"] ** 0.5, 1),
             "peak_perf_stress":    round(w["peak_perf_stress"], 1),
             "model_status":        "personalized" if pw > 0.5 else "warming_up",
+            "hour_bias":           w["hour_bias"],
+            "task_sensitivity":    w["task_sensitivity"],
+            "face_reliability":    w["face_reliability"],
+            "voice_reliability":   w["voice_reliability"],
+            "recovery_rate":       w["recovery_rate"],
         }
 
 # ─── CACHE ────────────────────────────────────────────────────────────────────

@@ -7,34 +7,42 @@
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;400;500;600;700&display=swap');
 
   :root {
-    --bg:        #EBDEC0;
-    --surface:   #CDD4B1;
-    --surface2:  #D2AB80;
-    --border:    rgba(0,0,0,0.12);
-    --text:      #000000;
-    --muted:     #105666;
-    --accent:    #B5C99A;
-    --accent2:   #8EA48B;
-    --warn:      #D4A259;
-    --danger:    #C96B5A;
-    --optimal:   #5B8C6F;
-    --radius:    16px;
-    --mono:      'Plus Jakarta Sans', sans-serif;
-    --serif:     'Playfair Display', serif;
+    --text: var(--text-primary);
+    --muted: var(--text-tertiary);
+    --accent: var(--primary);
+    --accent2: var(--secondary-1);
+    --warn: var(--yellow);
+    --danger: var(--red);
+    --optimal: var(--green);
+    --radius: var(--r);
+    --mono: 'DM Sans', sans-serif;
+    --serif: 'DM Serif Display', serif;
+    --card-bg: var(--card-primary);
+    --surface: var(--card-secondary);
+    --surface2: var(--card-primary);
+    --border-color: var(--border-visible);
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
-    background: var(--bg);
+    background-color: var(--bg-base);
+    background-image: url("/images/bg-image3.jpeg");
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
     color: var(--text);
     font-family: var(--mono);
     font-size: 14px;
     line-height: 1.6;
     min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    font-weight: 400;
+    position: relative;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
   }
 
   /* ── LAYOUT ─────────────────────────────────────────────────── */
@@ -51,7 +59,7 @@
     justify-content: space-between;
     margin-bottom: 40px;
     padding-bottom: 24px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-color);
   }
   .header-left h1 {
     font-family: var(--serif);
@@ -66,8 +74,8 @@
     font-size: 12px;
   }
   .user-badge {
-    background: var(--surface2);
-    border: 1px solid var(--border);
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 8px 16px;
     font-size: 12px;
@@ -96,7 +104,7 @@
   }
   .stat-card {
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius);
     padding: 18px 20px;
     position: relative;
@@ -138,7 +146,7 @@
   /* ── PERSONALIZATION PROGRESS BAR ───────────────────────────── */
   .pers-bar-wrap {
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius);
     padding: 20px 24px;
     margin-bottom: 28px;
@@ -201,7 +209,7 @@
   .panel {
     display: block;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-color);
     border-radius: var(--radius);
     padding: 20px;
   }
@@ -219,7 +227,7 @@
     content: '';
     flex: 1;
     height: 1px;
-    background: var(--border);
+    background: var(--border-color);
   }
 
   /* ── HOUR CHART ─────────────────────────────────────────────── */
@@ -320,7 +328,7 @@
     display: flex;
     gap: 10px;
     padding: 10px 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--border-color);
     font-size: 12px;
     color: var(--text);
     line-height: 1.5;
@@ -359,7 +367,7 @@
     border-radius: 6px;
     font-size: 10px;
     background: var(--surface2);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-color);
     color: var(--muted);
     margin-bottom: 16px;
   }
@@ -385,7 +393,7 @@
   /* ── REFRESH BTN ─────────────────────────────────────────────── */
   .refresh-btn {
     background: transparent;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-color);
     color: var(--muted);
     padding: 6px 14px;
     border-radius: 6px;
