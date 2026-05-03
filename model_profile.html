@@ -446,20 +446,20 @@
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Tasks</div>
-      <div class="nav-item" onclick="window.location.href='dashboard.html#schedule'"><i class="fas fa-list-check"></i>View Schedule</div>
-      <div class="nav-item" onclick="window.location.href='dashboard.html#add'"><i class="fas fa-plus-circle"></i>Add Task</div>
-      <div class="nav-item" onclick="window.location.href='dashboard.html#calendar'"><i class="fas fa-calendar-alt"></i>Calendar</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html?panel=schedule'"><i class="fas fa-list-check"></i>View Schedule</div>
+      <div class="nav-item" onclick="openAddModalFromProfile()"><i class="fas fa-plus-circle"></i>Add Task</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html?panel=calendar'"><i class="fas fa-calendar-alt"></i>Calendar</div>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Insights</div>
-      <div class="nav-item" onclick="window.location.href='dashboard.html#analytics'"><i class="fas fa-chart-line"></i>Analytics</div>
-      <div class="nav-item" onclick="window.location.href='dashboard.html#history'"><i class="fas fa-heartbeat"></i>Stress History</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html?panel=analytics'"><i class="fas fa-chart-line"></i>Analytics</div>
+      <div class="nav-item active" onclick="window.location.href='/model-profile?uid=' + encodeURIComponent(USER_ID)"><i class="fas fa-chart-bar"></i>My Stress Profile</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html?panel=history'"><i class="fas fa-heartbeat"></i>Stress History</div>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Account</div>
       <div class="nav-item" onclick="window.location.href='settings.html'"><i class="fas fa-cog"></i>Settings</div>
       <div class="nav-item" onclick="window.location.href='account.html'"><i class="fas fa-user-circle"></i>My Account</div>
-      <div class="nav-item active" onclick="window.location.href='/model-profile?uid=' + encodeURIComponent(USER_ID)"><i class="fas fa-chart-bar"></i>My Stress Profile</div>
     </div>
   </nav>
   <div class="sidebar-bottom">
@@ -476,7 +476,7 @@
     <div class="topbar-left"><h1>Stress Profile</h1></div>
     <div class="topbar-right">
       <span class="topbar-date" id="todayDate"></span>
-      <button class="btn btn-outline" onclick="loadAll()">↻ Refresh</button>
+      <div class="user-avatar" id="topbarAvatar" onclick="window.location.href='account.html'" style="cursor:pointer; width:34px; height:34px; font-size:.85rem;">?</div>
     </div>
   </div>
   <div class="page-content">
@@ -580,28 +580,28 @@
         <div id="taskBars"></div>
       </div>
 
-      <!-- Modality reliability -->
+      <!-- AI Diagnostics -->
       <div class="panel">
-        <div class="panel-title">Signal Reliability</div>
+        <div class="panel-title">AI System Diagnostics</div>
         <div class="mod-row">
-          <div class="mod-icon">👁️</div>
+          <div class="mod-icon" title="Resilience is your ability to recover from stress">🛡️</div>
           <div class="mod-info">
-            <div class="mod-name">Face (AU landmarks)</div>
+            <div class="mod-name">Stress Resilience</div>
             <div class="mod-bar-track">
-              <div class="mod-bar-fill" id="faceBar" style="width:0%"></div>
+              <div class="mod-bar-fill" id="resilienceBar" style="width:0%"></div>
             </div>
           </div>
-          <div class="mod-pct" id="facePct">—</div>
+          <div class="mod-pct" id="resiliencePct">—</div>
         </div>
         <div class="mod-row">
-          <div class="mod-icon">🎙️</div>
+          <div class="mod-icon" title="Consistency of your scans">📈</div>
           <div class="mod-info">
-            <div class="mod-name">Voice (jitter/HNR)</div>
+            <div class="mod-name">Focus Consistency</div>
             <div class="mod-bar-track">
-              <div class="mod-bar-fill" id="voiceBar" style="width:0%"></div>
+              <div class="mod-bar-fill" id="consistencyBar" style="width:0%"></div>
             </div>
           </div>
-          <div class="mod-pct" id="voicePct">—</div>
+          <div class="mod-pct" id="consistencyPct">—</div>
         </div>
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
           <div class="stat-label">Recovery Rate</div>
@@ -649,12 +649,41 @@
   </div><!-- /mainContent -->
 </div><!-- /shell -->
 
+<script src="js/script.js"></script>
 <script>
 // ── CONFIG ──────────────────────────────────────────────────────────────────
-const API_BASE = window.location.origin + '/flask-api';
-// user_id pulled from query param ?uid=xxx or localStorage
+const FLASK_API_BASE = window.location.origin + '/flask-api';
+
+// user_id pulled from query param ?uid=xxx OR localStorage user object OR mindflow_uid
+const _mpUser = JSON.parse(localStorage.getItem('user') || 'null');
+if (!_mpUser) { window.location.href = 'login.html'; }
+
 const USER_ID = new URLSearchParams(location.search).get('uid') ||
+                _mpUser?.email ||
                 localStorage.getItem('mindflow_uid') || 'anonymous';
+
+// Populate sidebar user info
+const _mpName = _mpUser?.full_name || _mpUser?.name || 'User';
+document.getElementById('sidebarName').textContent = _mpName;
+document.getElementById('sidebarAvatar').textContent = _mpName.charAt(0).toUpperCase();
+const topbarAvatar = document.getElementById('topbarAvatar');
+if (topbarAvatar) topbarAvatar.textContent = _mpName.charAt(0).toUpperCase();
+
+// Logout
+const _mpLogoutBtn = document.getElementById('logoutBtn');
+if (_mpLogoutBtn) _mpLogoutBtn.addEventListener('click', () => {
+  localStorage.removeItem('user'); localStorage.removeItem('email');
+  window.location.href = 'login.html';
+});
+
+// Add Task — go to dashboard with modal trigger
+function openAddModalFromProfile() {
+  window.location.href = 'dashboard.html?panel=schedule';
+}
+
+// Today's date in topbar
+const _mpTodayDate = document.getElementById('todayDate');
+if (_mpTodayDate) _mpTodayDate.textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'});
 
 // State
 let profileData  = null;
@@ -665,7 +694,7 @@ let lastInsights   = [];
 
 // ── FETCH HELPERS ────────────────────────────────────────────────────────────
 async function api(path) {
-  const r = await fetch(API_BASE + path);
+  const r = await fetch(FLASK_API_BASE + path);
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return r.json();
 }
@@ -691,7 +720,7 @@ async function loadAll() {
     document.getElementById('mainContent').style.display = 'block';
   } catch(e) {
     document.getElementById('loadingMsg').style.display = 'none';
-    showError(`Could not reach MindFlow API at ${API_BASE}. Make sure bridge_v3.py is running. (${e.message})`);
+    showError(`Could not reach MindFlow API at ${FLASK_API_BASE}. Make sure bridge_v3.py is running. (${e.message})`);
   }
 }
 
@@ -746,14 +775,16 @@ function renderAll() {
   // Task bars
   renderTaskBars(p.task_sensitivity, p.baseline);
 
-  // Modality reliability
-  const fr = Math.round(p.face_reliability * 100);
-  const vr = Math.round(p.voice_reliability * 100);
-  document.getElementById('faceBar').style.width  = fr + '%';
-  document.getElementById('voiceBar').style.width = vr + '%';
-  document.getElementById('facePct').textContent  = fr + '%';
-  document.getElementById('voicePct').textContent = vr + '%';
-  document.getElementById('recoveryRate').textContent = (p.recovery_rate * 100).toFixed(1);
+  // AI Diagnostics fallbacks
+  const resPct = Math.min(Math.round((p.recovery_rate || 0.05) * 1000), 100);
+  const conPct = Math.min(Math.round((p.scan_count / 10) * 100), 100);
+  
+  document.getElementById('resilienceBar').style.width = resPct + '%';
+  document.getElementById('consistencyBar').style.width = conPct + '%';
+  document.getElementById('resiliencePct').textContent = resPct + '%';
+  document.getElementById('consistencyPct').textContent = conPct + '%';
+
+  document.getElementById('recoveryRate').textContent = p.recovery_rate ? (p.recovery_rate * 100).toFixed(1) : 'Analyzing...';
 
   // Insights
   renderInsights(lastInsights.length ? lastInsights : [
@@ -793,10 +824,10 @@ function drawGauge(value) {
 
   // Track
   ctx.beginPath(); ctx.arc(cx, cy, r, startAngle, endAngle);
-  ctx.strokeStyle = '#1a1f16'; ctx.lineWidth = 14; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 14; ctx.stroke();
 
   // Filled arc
-  const color = value > 70 ? '#e87860' : value > 55 ? '#e8c870' : value < 30 ? '#78d8a8' : '#a8d878';
+  const color = value > 70 ? '#f87171' : value > 55 ? '#fbbf24' : value < 30 ? '#4ade80' : '#818cf8';
   ctx.beginPath(); ctx.arc(cx, cy, r, startAngle, valueAngle);
   ctx.strokeStyle = color; ctx.lineWidth = 14;
   ctx.lineCap = 'round'; ctx.stroke();
@@ -805,15 +836,15 @@ function drawGauge(value) {
   const nx = cx + (r) * Math.cos(valueAngle);
   const ny = cy + (r) * Math.sin(valueAngle);
   ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(nx, ny);
-  ctx.strokeStyle = '#e8ede0'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 2; ctx.stroke();
   ctx.beginPath(); ctx.arc(cx, cy, 5, 0, 2*Math.PI);
-  ctx.fillStyle = '#e8ede0'; ctx.fill();
+  ctx.fillStyle = '#f8fafc'; ctx.fill();
 
   // Labels
-  ctx.fillStyle = '#6b7560'; ctx.font = '11px DM Mono, monospace'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#64748b'; ctx.font = '11px Plus Jakarta Sans, sans-serif'; ctx.textAlign = 'center';
   ctx.fillText('0', cx - r - 8, cy + 4);
   ctx.fillText('100', cx + r + 10, cy + 4);
-  ctx.fillStyle = color; ctx.font = 'bold 22px DM Serif Display, serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = color; ctx.font = 'bold 22px Playfair Display, serif'; ctx.textAlign = 'center';
   ctx.fillText(Math.round(value), cx, cy - 20);
 }
 
@@ -826,7 +857,8 @@ function drawHourChart(hourBias, baseline) {
   canvas.width = W; canvas.height = H;
   ctx.clearRect(0, 0, W, H);
 
-  const values = hourBias.map(b => Math.max(0, Math.min(100, baseline + b)));
+  const values = (hourBias || []).map(b => Math.max(0, Math.min(100, (baseline||35) + b)));
+  if (!values.length) return;
   const min = Math.min(...values) - 5, max = Math.max(...values) + 5;
   const norm = v => H - ((v - min) / (max - min)) * (H - 16) - 8;
 
@@ -838,8 +870,8 @@ function drawHourChart(hourBias, baseline) {
   });
   ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
   const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, 'rgba(168,216,120,0.25)');
-  grad.addColorStop(1, 'rgba(168,216,120,0)');
+  grad.addColorStop(0, 'rgba(129,140,248,0.25)');
+  grad.addColorStop(1, 'rgba(129,140,248,0)');
   ctx.fillStyle = grad; ctx.fill();
 
   // Line
@@ -848,28 +880,32 @@ function drawHourChart(hourBias, baseline) {
     const x = (i / 23) * W, y = norm(v);
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   });
-  ctx.strokeStyle = '#a8d878'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+  ctx.strokeStyle = '#818cf8'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
 
   // Baseline reference line
   ctx.beginPath();
   ctx.setLineDash([4, 4]);
   const by = norm(baseline);
   ctx.moveTo(0, by); ctx.lineTo(W, by);
-  ctx.strokeStyle = 'rgba(107,117,96,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
   ctx.setLineDash([]);
 
   // Current hour dot
   const now = new Date().getHours();
   const cx = (now / 23) * W, cy = norm(values[now]);
   ctx.beginPath(); ctx.arc(cx, cy, 4, 0, 2*Math.PI);
-  ctx.fillStyle = '#a8d878'; ctx.fill();
+  ctx.fillStyle = '#818cf8'; ctx.fill();
 }
 
 // ── TASK BARS ────────────────────────────────────────────────────────────────
 function renderTaskBars(sensitivity, baseline) {
   const container = document.getElementById('taskBars');
   container.innerHTML = '';
-  const entries = Object.entries(sensitivity).filter(([k]) => k !== 'unknown');
+  const entries = Object.entries(sensitivity || {}).filter(([k]) => k !== 'unknown');
+  if (entries.length === 0) {
+    container.innerHTML = '<div style="color:var(--muted);font-size:11px;padding-top:10px;line-height:1.4">AI is correlating your tasks with stress levels... Keep scanning while working to see your profile!</div>';
+    return;
+  }
   const stressValues = entries.map(([, s]) => s * baseline);
   const maxVal = Math.max(...stressValues, 70);
 
@@ -935,7 +971,7 @@ function drawSparkline(avgByHour) {
   ctx.clearRect(0, 0, W, H);
 
   const hours  = Array.from({length:24}, (_,i) => i);
-  const values = hours.map(h => avgByHour[h] ?? null);
+  const values = hours.map(h => (avgByHour || {})[h] ?? null);
   const valid  = values.filter(v => v !== null);
   if (!valid.length) return;
 
@@ -944,7 +980,7 @@ function drawSparkline(avgByHour) {
 
   // Draw line skipping nulls
   let penDown = false;
-  ctx.beginPath(); ctx.strokeStyle = '#a8d878'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.strokeStyle = '#818cf8'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
   hours.forEach((h, i) => {
     if (values[i] === null) { penDown = false; return; }
     const x = (i / 23) * W, y = norm(values[i]);
@@ -954,7 +990,7 @@ function drawSparkline(avgByHour) {
   ctx.stroke();
 
   // Hour labels
-  ctx.fillStyle = '#6b7560'; ctx.font = '10px DM Mono, monospace';
+  ctx.fillStyle = '#94a3b8'; ctx.font = '10px Plus Jakarta Sans, sans-serif';
   [0, 6, 12, 18].forEach(h => {
     const x = (h / 23) * W;
     ctx.textAlign = h === 0 ? 'left' : h === 18 ? 'right' : 'center';

@@ -2,6 +2,12 @@
 // ─────────────────────────────────────────────────────
 console.log("JS LOADED");        // temporary work
 const API_BASE = 'http://localhost:3000';
+function openModelProfile() {
+  const user = JSON.parse(localStorage.getItem('user') || 'null');
+  const email = user?.email || localStorage.getItem('email') || 'anonymous';
+  window.location.href = '/model-profile?uid=' + encodeURIComponent(email);
+}
+window.openModelProfile = openModelProfile;
 
 // ── UTILS ──────────────────────────────────────────────
 function isValidEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }

@@ -15,6 +15,8 @@ require('dotenv').config();
 const app    = express();
 const PORT   = 3000;
 
+app.use(express.json());
+
 // Disk storage for logs/videos
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
@@ -63,6 +65,8 @@ const PYTHON_URL = 'http://127.0.0.1:5000';
         await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT false`);
         await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
         await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'other'`);
+        // Ensure deadline is DATE type to avoid timezone issues
+        await pool.query(`ALTER TABLE tasks ALTER COLUMN deadline TYPE DATE USING deadline::date`);
         
         // Ensure categories table exists
         await pool.query(`
@@ -104,6 +108,9 @@ const PYTHON_URL = 'http://127.0.0.1:5000';
         await pool.query(`ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_ai_title TEXT`);
         await pool.query(`ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_ai_message TEXT`);
         await pool.query(`ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_stress_used REAL`);
+        await pool.query(`ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_face_emotion TEXT`);
+        await pool.query(`ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_voice_emotion TEXT`);
+        await pool.query(`ALTER TABLE user_personalization ADD COLUMN IF NOT EXISTS last_video_url TEXT`);
         await pool.query(`
             CREATE TABLE IF NOT EXISTS user_scan_stats (
                 id SERIAL PRIMARY KEY,
@@ -189,6 +196,14 @@ app.post('/signup', async (req, res) => {
              VALUES ($1,$2,$3,$4,$5,$6,$7,false)
              ON CONFLICT (email) DO UPDATE SET otp=$7`,
             [full_name,email,hashed,dob,gender,occupation,otp]
+        );
+
+        await pool.query(
+            `INSERT INTO user_personalization
+             (user_email, weights, last_ai_order, last_deferred_ids, last_ai_title, last_ai_message, last_stress_used, last_face_emotion, last_voice_emotion, last_video_url)
+             VALUES ($1, '{}'::jsonb, '[]'::jsonb, '[]'::jsonb, '', '', 40, null, null, null)
+             ON CONFLICT (user_email) DO NOTHING`,
+            [email]
         );
 
         res.json({ success: true, otp });
@@ -324,7 +339,7 @@ app.get('/get-tasks', async (req, res) => {
     if (!email) return res.status(400).json({ error: 'Email required' });
     try {
         const result = await pool.query(
-            'SELECT * FROM tasks WHERE user_email = $1 ORDER BY created_at DESC',
+            "SELECT id, user_email, title, to_char(deadline, 'YYYY-MM-DD') as deadline, priority, status, category, created_at, updated_at FROM tasks WHERE user_email = $1 ORDER BY created_at DESC",
             [email]
         );
         res.json({ tasks: result.rows });
@@ -343,7 +358,17 @@ app.get('/get-ai-state', async (req, res) => {
             'SELECT last_ai_order, last_deferred_ids, last_ai_title, last_ai_message, last_stress_used FROM user_personalization WHERE user_email = $1',
             [email]
         );
-        if (result.rows.length === 0) return res.json({ state: null });
+        if (result.rows.length === 0) {
+            return res.json({
+                state: {
+                    order: [],
+                    defer: [],
+                    title: '',
+                    message: '',
+                    stress_used: 40
+                }
+            });
+        }
         const row = result.rows[0];
         res.json({
             state: {
@@ -351,7 +376,10 @@ app.get('/get-ai-state', async (req, res) => {
                 defer: row.last_deferred_ids || [],
                 title: row.last_ai_title || '',
                 message: row.last_ai_message || '',
-                stress_used: row.last_stress_used || 40
+                stress_used: row.last_stress_used || 40,
+                face_emotion: row.last_face_emotion || null,
+                voice_emotion: row.last_voice_emotion || null,
+                video_url: row.last_video_url || null
             }
         });
     } catch (err) {
@@ -367,7 +395,7 @@ app.post('/add-task', async (req, res) => {
     try {
         const result = await pool.query(
             `INSERT INTO tasks (user_email, title, deadline, priority, status, category)
-             VALUES ($1, $2, $3, $4, 'pending', $5) RETURNING id`,
+             VALUES ($1, $2, $3::date, $4, 'pending', $5) RETURNING id`,
             [user_email, title, deadline, priority || 'medium', category || 'other']
         );
         
@@ -390,7 +418,7 @@ app.post('/update-task', async (req, res) => {
     if (!taskId || !title || !user_email) return res.status(400).json({ error: 'Missing fields' });
     try {
         const result = await pool.query(
-            `UPDATE tasks SET title=$1, deadline=$2, priority=$3, status=$4, category=$5
+            `UPDATE tasks SET title=$1, deadline=$2::date, priority=$3, status=$4, category=$5
              WHERE id=$6 AND user_email=$7 RETURNING id`,
             [title, deadline, priority, status || 'pending', category || 'other', taskId, user_email]
         );
@@ -614,21 +642,29 @@ app.post('/analyze', async (req, res) => {
         // Save AI decisions to DB
         try {
             await pool.query(
-                `UPDATE user_personalization SET
-                    last_ai_order = $1,
-                    last_deferred_ids = $2,
-                    last_ai_title = $3,
-                    last_ai_message = $4,
-                    last_stress_used = $5,
-                    last_updated = CURRENT_TIMESTAMP
-                 WHERE user_email = $6`,
+                `INSERT INTO user_personalization
+                 (user_email, weights, last_ai_order, last_deferred_ids, last_ai_title, last_ai_message, last_stress_used, last_face_emotion, last_voice_emotion, last_video_url, last_updated)
+                 VALUES ($6, '{}'::jsonb, $1, $2, $3, $4, $5, $7, $8, $9, CURRENT_TIMESTAMP)
+                 ON CONFLICT (user_email) DO UPDATE SET
+                     last_ai_order = EXCLUDED.last_ai_order,
+                     last_deferred_ids = EXCLUDED.last_deferred_ids,
+                     last_ai_title = EXCLUDED.last_ai_title,
+                     last_ai_message = EXCLUDED.last_ai_message,
+                     last_stress_used = EXCLUDED.last_stress_used,
+                     last_face_emotion = EXCLUDED.last_face_emotion,
+                     last_voice_emotion = EXCLUDED.last_voice_emotion,
+                     last_video_url = EXCLUDED.last_video_url,
+                     last_updated = CURRENT_TIMESTAMP`,
                 [
                     JSON.stringify(pyRes.data.order || []),
                     JSON.stringify(pyRes.data.defer || []),
                     pyRes.data.title || '',
                     pyRes.data.message || '',
                     pyRes.data.stress_used || stressLevel,
-                    userEmail
+                    userEmail,
+                    req.body.faceEmotion || null,
+                    req.body.voiceEmotion || null,
+                    req.body.videoUrl || null
                 ]
             );
         } catch (dbErr) {
@@ -662,24 +698,34 @@ app.post('/analyze', async (req, res) => {
     // Save fallback decisions as well
     try {
         await pool.query(
-            `UPDATE user_personalization SET
-                last_ai_order = $1,
-                last_deferred_ids = $2,
-                last_ai_title = $3,
-                last_ai_message = $4,
-                last_stress_used = $5,
-                last_updated = CURRENT_TIMESTAMP
-             WHERE user_email = $6`,
+            `INSERT INTO user_personalization
+             (user_email, weights, last_ai_order, last_deferred_ids, last_ai_title, last_ai_message, last_stress_used, last_face_emotion, last_voice_emotion, last_video_url, last_updated)
+             VALUES ($6, '{}'::jsonb, $1, $2, $3, $4, $5, $7, $8, $9, CURRENT_TIMESTAMP)
+             ON CONFLICT (user_email) DO UPDATE SET
+                 last_ai_order = EXCLUDED.last_ai_order,
+                 last_deferred_ids = EXCLUDED.last_deferred_ids,
+                 last_ai_title = EXCLUDED.last_ai_title,
+                 last_ai_message = EXCLUDED.last_ai_message,
+                 last_stress_used = EXCLUDED.last_stress_used,
+                 last_face_emotion = EXCLUDED.last_face_emotion,
+                 last_voice_emotion = EXCLUDED.last_voice_emotion,
+                 last_video_url = EXCLUDED.last_video_url,
+                 last_updated = CURRENT_TIMESTAMP`,
             [
                 JSON.stringify(fallbackData.order),
                 JSON.stringify(fallbackData.defer),
                 fallbackData.title,
                 fallbackData.message,
                 fallbackData.stress_used,
-                userEmail
+                userEmail,
+                req.body.faceEmotion || null,
+                req.body.voiceEmotion || null,
+                req.body.videoUrl || null
             ]
         );
-    } catch (dbErr) {}
+    } catch (dbErr) {
+        console.error('[DB] Failed to save fallback AI decisions:', dbErr.message);
+    }
 
     return res.json(fallbackData);
 });
@@ -693,6 +739,25 @@ app.post('/log-stress', async (req, res) => {
             `INSERT INTO stress_logs (user_email, stress_level, source, face_emotion, voice_emotion, note, video_url)
              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [email, stressLevel, source || 'slider', faceEmotion || null, voiceEmotion || null, note || null, videoUrl || null]
+        );
+
+        // ✨ ALSO LOG TO user_scan_stats FOR PYTHON ANALYTICS BRIDGE
+        const now = new Date();
+        const ts  = now.getTime() / 1000.0;
+        const hr  = now.getHours();
+        const dow = now.getDay();
+        await pool.query(
+            `INSERT INTO user_scan_stats (user_email, timestamp, hour, day_of_week, raw_stress, adjusted_stress)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [email, ts, hr, dow, stressLevel, stressLevel]
+        );
+
+        // ✨ Sync to user_personalization so state stays updated on every scan
+        await pool.query(
+            `UPDATE user_personalization SET 
+             last_stress_used=$1, last_face_emotion=$2, last_voice_emotion=$3, last_video_url=$4, last_updated=CURRENT_TIMESTAMP
+             WHERE user_email=$5`,
+            [stressLevel, faceEmotion || null, voiceEmotion || null, videoUrl || null, email]
         );
         res.json({ success: true });
     } catch(err) {

@@ -15,6 +15,15 @@
   <div class="sidebar-logo"><div class="logo-icon"><i class="fas fa-seedling"></i></div><span>Mind<b>Flow</b></span></div>
   <nav class="sidebar-nav">
     <div class="nav-section"><div class="nav-section-label">Main</div><div class="nav-item" onclick="window.location.href='dashboard.html'"><i class="fas fa-home"></i>Dashboard</div></div>
+    <div class="nav-section"><div class="nav-section-label">Tasks</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html?panel=schedule'"><i class="fas fa-list-check"></i>Task View</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html?panel=calendar'"><i class="fas fa-calendar-alt"></i>Calendar</div>
+    </div>
+    <div class="nav-section"><div class="nav-section-label">Insights</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html?panel=analytics'"><i class="fas fa-chart-line"></i>Analytics</div>
+      <div class="nav-item" onclick="openModelProfile()"><i class="fas fa-chart-bar"></i>My Stress Profile</div>
+      <div class="nav-item" onclick="window.location.href='dashboard.html?panel=history'"><i class="fas fa-heartbeat"></i>Stress History</div>
+    </div>
     <div class="nav-section"><div class="nav-section-label">Account</div>
       <div class="nav-item" onclick="window.location.href='settings.html'"><i class="fas fa-cog"></i>Settings</div>
       <div class="nav-item active"><i class="fas fa-user-circle"></i>My Account</div>

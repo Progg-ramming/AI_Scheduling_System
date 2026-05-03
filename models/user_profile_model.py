@@ -411,7 +411,20 @@ class UserStressProfile:
                 "peak_perf_stress":   round(w["peak_perf_stress"], 1),
                 "personalization_pct":round(self._pw() * 100),
             }
-        return {"source": "weights_only", "total_scans": self.scan_count, "baseline": round(w["baseline"], 1)}
+        return {
+            "source":             "weights_only",
+            "scans_in_period":    0,
+            "days_analyzed":      days,
+            "total_scans":        self.scan_count,
+            "avg_stress":         round(w["baseline"], 1),
+            "max_stress":         round(w["baseline"], 1),
+            "min_stress":         round(w["baseline"], 1),
+            "trend":              "stable",
+            "avg_by_hour":        {},
+            "baseline":           round(w["baseline"], 1),
+            "peak_perf_stress":   round(w["peak_perf_stress"], 1),
+            "personalization_pct":round(self._pw() * 100),
+        }
 
     def get_profile_summary(self) -> Dict:
         w, pw = self.weights, self._pw()
@@ -420,14 +433,14 @@ class UserStressProfile:
             "scan_count":          self.scan_count,
             "personalization_pct": round(pw * 100),
             "baseline":            round(w["baseline"], 1),
-            "stress_std":          round(w["stress_var"] ** 0.5, 1),
+            "stress_std":          round(np.sqrt(max(w["stress_var"], 0)), 1),
             "peak_perf_stress":    round(w["peak_perf_stress"], 1),
             "model_status":        "personalized" if pw > 0.5 else "warming_up",
             "hour_bias":           w["hour_bias"],
             "task_sensitivity":    w["task_sensitivity"],
-            "face_reliability":    w["face_reliability"],
-            "voice_reliability":   w["voice_reliability"],
-            "recovery_rate":       w["recovery_rate"],
+            "face_reliability":    round(w["face_reliability"], 2),
+            "voice_reliability":   round(w["voice_reliability"], 2),
+            "recovery_rate":       round(w["recovery_rate"], 4),
         }
 
 # ─── CACHE ────────────────────────────────────────────────────────────────────
