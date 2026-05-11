@@ -4,7 +4,7 @@ echo ═════════════════════════
 echo   MindFlow: AI Stress-Aware Task Manager
 echo ══════════════════════════════════════════════════
 echo.
-
+ 
 :: 1. Start the AI Bridge in a new window
 echo [1/2] Starting AI Bridge (Python in mindflow_env)...
 start "MindFlow AI Bridge" cmd /k "mindflow_env\Scripts\activate && cd realtime && python bridge_v3.py"

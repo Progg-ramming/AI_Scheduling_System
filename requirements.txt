@@ -1,0 +1,92 @@
+# Python Requirements (pip install -r requirements.txt)
+absl-py==1.4.0
+astunparse==1.6.3
+audioread==3.1.2
+cachetools==5.6.1
+certifi==2025.1.31
+cffi==1.17.1
+charset-normalizer==3.4.1
+click==9.0.0
+colorama==0.4.6
+contourpy==1.4.0
+cycler==0.12.1
+decorator==5.1.1
+Flask==3.1.0
+flask-cors==6.0.2
+flatbuffers==25.12.19
+gast==0.4.0
+git-filter-repo==2.47.0
+google-auth==2.49.1
+google-auth-oauthlib==1.0.0
+google-pasta==0.2.0
+grpcio==1.74.0
+h5py==3.16.0
+idna==3.11
+itsdangerous==2.2.0
+Jinja2==3.1.6
+joblib==1.5.3
+keras==2.13.1
+lazy-loader==0.5
+libclang==18.1.1
+librosa==0.11.0
+llvmlite==0.47.0
+Markdown==3.10.2
+MarkupSafe==3.0.3
+msgpack==1.1.2
+numba==0.65.0
+numpy==1.24.3
+oauthlib==3.3.1
+opencv-python==4.8.0.76
+opt_einsum==3.4.0
+packaging==26.0
+platformdirs==4.9.4
+pooch==1.9.0
+protobuf==4.25.9
+pyasn1==0.6.3
+pyasn1_modules==0.4.2
+pycparser==3.0
+pydub==0.25.1
+requests==2.33.1
+requests-oauthlib==2.0.0
+scikit-learn==1.7.2
+scipy==1.15.3
+six==1.17.0
+soundfile==0.13.1
+soxr==1.0.0
+tensorboard==2.13.0
+tensorboard-data-server==0.7.2
+tensorflow==2.13.0
+tensorflow-estimator==2.13.0
+tensorflow-intel==2.13.0
+tensorflow-io-gcs-filesystem==0.31.0
+termcolor==3.3.0
+threadpoolctl==3.6.0
+typing_extensions==4.5.0
+urllib3==2.6.3
+Werkzeug==3.1.8
+wrapt==2.1.2
+
+# Node.js Dependencies (npm install)
+# Listed in package.json:
+# axios: ^1.14.0
+# bcrypt: ^6.0.0
+# body-parser: ^2.2.2
+# chart.js: ^4.5.1
+# cors: ^2.8.6
+# dotenv: ^17.4.0
+# express: ^5.2.1
+# multer: ^2.1.1
+# pg: ^8.20.0
+
+# Environment Variables (.env) - CRITICAL (Ignored by Git)
+# Create a .env file with the following keys:
+# DB_USER=
+# DB_PASSWORD=
+# DB_NAME=
+# DB_HOST=
+# DB_PORT=
+
+# System Requirements & Important Directories
+# 1. PostgreSQL Database: Ensure it's running and schema from 'Schema.sql' is applied.
+# 2. Upload Directory: 'upload/' folder must exist (contents are ignored by git).
+# 3. Python Virtual Environment: 'mindflow_env/' is ignored but necessary for Python components.

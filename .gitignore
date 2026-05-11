@@ -1,6 +1,7 @@
 # Env
 .env
 .env.*
+!.env.example
 
 # Python
 mindflow_env/
@@ -26,6 +27,7 @@ upload/*
 
 # txt files
 *.txt
+!requirements.txt
 
 # unwanted data files
 *.wav
